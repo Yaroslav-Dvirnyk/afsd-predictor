@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "AFSD Predictor: peak-temperature and processing-map calculator for Additive Friction Stir Deposition"
+abstract: >-
+  A desktop application that computes the peak contact temperature of the
+  Additive Friction Stir Deposition (AFSD) process and builds 2D/3D processing
+  maps with stability windows, using a force-controlled self-consistent thermal
+  model for shoulderless and shouldered (MELD) configurations.
+type: software
+authors:
+  - family-names: Dvirnyk
+    given-names: Yaroslav
+    orcid: "https://orcid.org/0000-0001-5439-5413"
+    email: dvirnyk@gmail.com
+    affiliation: "Zaporizhzhia Polytechnic National University, Department of Aircraft Engine Technology"
+keywords:
+  - additive friction stir deposition
+  - AFSD
+  - MELD
+  - peak temperature
+  - processing map
+  - solid-state additive manufacturing
+license: MIT
+version: "1.0.0"
+date-released: "2026-06-12"

@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# Author-private research material (NOT part of the program)
+*.pdf
+*.xlsx
+project.afsd
+eta_*.md
+model_spec_*.md
+solver_review_*.md
+validation_*.md
+Статистика/
+Статистика*/
+
+# OS
+Thumbs.db
+.DS_Store
