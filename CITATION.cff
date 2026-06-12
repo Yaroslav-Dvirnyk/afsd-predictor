@@ -1,5 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
+doi: 10.5281/zenodo.20669797
 title: "AFSD Predictor: peak-temperature and processing-map calculator for Additive Friction Stir Deposition"
 abstract: >-
   A desktop application that computes the peak contact temperature of the
@@ -23,3 +24,11 @@ keywords:
 license: MIT
 version: "1.0.1"
 date-released: "2026-06-12"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.20669797
+    description: "Concept DOI (all versions)"
+  - type: doi
+    value: 10.5281/zenodo.20669798
+    description: "Version DOI (v1.0.1)"
+repository-code: "https://github.com/Yaroslav-Dvirnyk/afsd-predictor"

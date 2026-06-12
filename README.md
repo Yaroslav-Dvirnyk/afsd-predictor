@@ -1,5 +1,8 @@
 # AFSD Predictor
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20669797.svg)](https://doi.org/10.5281/zenodo.20669797)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **Peak-temperature and processing-map calculator for Additive Friction Stir Deposition (AFSD).**
 
 AFSD Predictor is a desktop application that computes the **peak contact temperature**
@@ -94,8 +97,15 @@ deliberately absorbed into eta.
 
 ## Citation
 
-If you use AFSD Predictor in your work, please cite it via the archived release
-(Zenodo DOI — added on first release) or the metadata in `CITATION.cff`.
+If you use AFSD Predictor in your work, please cite the archived software:
+
+> Dvirnyk, Y. (2026). *AFSD Predictor: peak-temperature and processing-map
+> calculator for Additive Friction Stir Deposition.* Zenodo.
+> https://doi.org/10.5281/zenodo.20669797
+
+The concept DOI **10.5281/zenodo.20669797** always resolves to the latest version;
+each release also has its own version DOI. See `CITATION.cff` for machine-readable
+metadata.
 
 ## Author
 
