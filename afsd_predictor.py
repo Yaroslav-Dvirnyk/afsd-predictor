@@ -1134,6 +1134,10 @@ class App(tk.Tk):
         self._init_vars()
         self.geometry("1400x900")
         self.minsize(1120, 740)
+        try:                                   # иконка окна (рядом со скриптом / в .exe)
+            self.iconbitmap(_bundled_file("app.ico"))
+        except Exception:
+            pass
         self._apply_fonts()
         self._build_menu()
         self.body = ttk.Frame(self)

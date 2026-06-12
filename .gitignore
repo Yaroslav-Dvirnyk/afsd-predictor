@@ -21,3 +21,6 @@ validation_*.md
 # OS
 Thumbs.db
 .DS_Store
+
+# intermediate icon render
+icon_*.png
