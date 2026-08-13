@@ -1170,4 +1170,402 @@ def compute_T_audit(omega, R, H, p):
 
 
 # ----------------------------------------------------------------------------
-#  GUI
+#  Модель состояния расчёта
+#
+#  Значения полей, режим процесса и то, какие параметры варьируются, — это не
+#  свойство интерфейса, а входные данные задачи. Держим их здесь, чтобы Tk- и
+#  Qt-окна считали по одному и тому же коду, а не по двум расходящимся копиям.
+# ----------------------------------------------------------------------------
+
+# журнальные (англ.) подписи осей: (Название, символ-mathtext, единицы)
+JLAB = {"ω": ("Rotational Speed", r"\omega", "rev/min"),
+        "R": ("Tool Radius", "R", "mm"),
+        "H": ("Gap", "H", "mm"),
+        "vz": ("Feed Velocity", "v_{f}", "mm/s"),
+        "vx": ("Traverse Velocity", "v_{t}", "mm/s"),
+        "D": ("Tool Diameter", "D", "mm"),
+        "a": ("Bar Side", "a", "mm"),
+        "F": ("Axial Force", "F", "kN")}
+
+# mathtext-символы факторов (v↓→v_f, v→→v_t — как в графике)
+AX_MATH = {"ω": r"\omega", "R": "R", "H": "H",
+           "vz": "v_{f}", "vx": "v_{t}", "D": "D", "a": "a", "F": "F"}
+
+# отображаемые символы факторов в текстовом уравнении (Unicode)
+UNI = {"ω": "ω", "vz": "v_f", "vx": "v_t", "D": "D", "H": "H",
+       "a": "a", "F": "F", "R": "R"}
+
+# короткое отображение в UI (списки осей, ползунки фиксированных значений)
+SYM_DISP = {"vz": "v_f", "vx": "v_t"}
+
+# значения полей по умолчанию — общий старт для обоих интерфейсов
+FIELD_DEFAULTS = dict(
+    eta="1.0", rod_L="0", F="8.0", mu="0.5",
+    k_shoe="25", v_dep="5.0",
+    w_min=200.0, w_max=1000.0, R_min=2.5, R_max=7.5, H_min=0.5, H_max=4.0,
+    pt_w=500.0, pt_R=5.0, pt_H=2.0,
+    vz_min=0.5, vz_max=3.0, vx_min=1.0, vx_max=10.0,
+    D_min=10.0, D_max=20.0, w_bead=12.0, pt_vz=1.5, pt_vx=5.0, pt_D=15.0,
+    a_min=7.0, a_max=12.0, pt_a=9.5, R_shoe=19.0,
+    F_min=4.0, F_max=20.0, pt_F=8.0,
+    sub_L=52.0, sub_W=32.0, sub_t=6.0, trail_len=26.0,
+    rod_len=20.0, shoe_th=9.0, bar_len=16.0)
+
+# рабочее (удерживаемое) значение каждого параметра режима
+FIX_DEFAULTS = {"ω": 500.0, "R": 5.0, "H": 2.0, "vz": 1.5, "vx": 5.0,
+                "D": 15.0, "a": 9.5, "F": 8.0}
+
+
+def disp_sym(sym):
+    """Как параметр показывается в интерфейсе."""
+    return SYM_DISP.get(sym, sym)
+
+
+def window_C(T_sol_C, lo=0.6, hi=0.9):
+    """Границы технологического окна в °C.
+
+    Гомологическая температура определена на АБСОЛЮТНОЙ шкале:
+        T_lo = lo·T_s,  T_hi = hi·T_s,   T_s в кельвинах,
+    а результат переводится обратно в °C. Прямое умножение долей на
+    температуру солидуса в °C дало бы другое окно и не было бы
+    гомологическим критерием."""
+    if hi <= lo:                       # защита от инверсии
+        lo, hi = 0.6, 0.9
+    Ts_K = c_to_k(float(T_sol_C))
+    return lo * Ts_K - 273.15, hi * Ts_K - 273.15
+
+
+class ModelState:
+    """Входные данные расчёта: поля, режим процесса, что варьируется.
+
+    Интерфейс читает и пишет эти значения, а считают всегда методы ниже —
+    поэтому Tk- и Qt-окна дают одинаковый результат по построению.
+    """
+
+    def __init__(self):
+        self.materials = all_materials()
+        self.mu_tables = all_mu_tables()
+        pr = PRESETS[DEFAULT_PRESET]
+        self.fields = {}
+        for key in ("sigma_ref", "T_ref", "m", "k", "T_solidus", "T0"):
+            self.fields[key] = str(pr[key])
+        self.fields["C_emp"] = "" if pr["C_emp"] is None else str(pr["C_emp"])
+        self.fields["rho"] = str(pr.get("rho", 2700.0))
+        self.fields["cp"] = str(pr.get("cp", 900.0))
+        self.fields["k_sub"] = str(pr["k"])
+        self.fields["rho_sub"] = str(pr.get("rho", 2700.0))
+        self.fields["cp_sub"] = str(pr.get("cp", 900.0))
+        for key, val in FIELD_DEFAULTS.items():
+            self.fields[key] = str(val)
+
+        # "range" — параметр входит в матрицу и может быть осью; "fixed" — константа
+        self.vary = {s: ("range" if s in ("ω", "vx") else "fixed")
+                     for s in ("ω", "vz", "vx", "D", "H", "a", "F")}
+        self.fix = dict(FIX_DEFAULTS)
+
+        self.preset = DEFAULT_PRESET
+        self.substrate = DEFAULT_PRESET
+        self.sub_same = True
+        self.shoe = SHOE_NONE
+        self.bore = False
+        self.mu_tdep = False
+        self.mu_pair = MU_PAIR_NONE
+        self.use_feedsink = True
+        self.use_pe = False
+        self.use_tdep = False
+        self.beadw_on = False
+        self.input_mode = "kin"            # "kin" (shoulderless) | "shoulder" (MELD)
+        self.model_key = "phys"
+        self.xaxis = "ω"
+        self.yaxis = "vx"
+        self.wlo, self.whi = 0.6, 0.9      # доли окна ×T_solidus
+
+    # ---------- доступ к полям ----------
+    def f(self, key, default=None):
+        """Число из поля. Запятая допускается как десятичный разделитель."""
+        raw = str(self.fields.get(key, "")).strip().replace(",", ".")
+        if not raw:
+            if default is None:
+                raise ValueError("пустое поле: %s" % key)
+            return default
+        try:
+            return float(raw)
+        except ValueError:
+            if default is None:
+                raise
+            return default
+
+    def set(self, key, value):
+        self.fields[key] = str(value)
+
+    def load_preset(self, name):
+        """Подставить свойства материала в поля прутка."""
+        m = self.materials.get(name)
+        if not m:
+            return
+        self.preset = name
+        for key in ("sigma_ref", "T_ref", "m", "k", "T_solidus", "T0"):
+            if key in m:
+                self.fields[key] = str(m[key])
+        self.fields["C_emp"] = "" if m.get("C_emp") is None else str(m["C_emp"])
+        for key in ("rho", "cp"):
+            if key in m:
+                self.fields[key] = str(m[key])
+
+    # ---------- параметры для решателя ----------
+    def params(self):
+        """Словарь p для solve_Tpeak: свойства прутка, подложки, контакта."""
+        p = dict(sigma_ref=self.f("sigma_ref"), T_ref=self.f("T_ref"),
+                 m=self.f("m"), T_solidus=self.f("T_solidus"), T0=self.f("T0"))
+        p["rho_dep"] = self.f("rho")
+        p["cp_dep"] = self.f("cp")
+        if self.sub_same:
+            p["k"] = self.f("k"); p["rho"] = self.f("rho"); p["cp"] = self.f("cp")
+        else:
+            p["k"] = self.f("k_sub"); p["rho"] = self.f("rho_sub")
+            p["cp"] = self.f("cp_sub")
+        c_raw = str(self.fields.get("C_emp", "")).strip().replace(",", ".")
+        p["C_emp"] = float(c_raw) if c_raw else None
+        p["eta"] = self.f("eta", 1.0)
+        p["F"] = self.f("F") * 1e3                  # кН -> Н (форс-контроль)
+        p["mu"] = self.f("mu")
+        p["use_mu_tdep"] = bool(self.mu_tdep)
+        p["mu_tab"] = self.mu_tables.get(self.mu_pair) if self.mu_tdep else None
+        p["v"] = self.f("v_dep") * 1e-3             # мм/с -> м/с
+        p["use_pe"] = bool(self.use_pe)
+        dep_mat = self.materials.get(self.preset, {})
+        p["poly"] = dep_mat.get("poly")
+        sub_mat = dep_mat if self.sub_same else self.materials.get(self.substrate, dep_mat)
+        p["kt_sub"] = sub_mat.get("kt"); p["cpt_sub"] = sub_mat.get("cpt")
+        p["cpt_dep"] = dep_mat.get("cpt"); p["kt_dep"] = dep_mat.get("kt")
+        p["k_dep"] = p["k"] if self.sub_same else dep_mat.get("k", p["k"])
+        p["use_tdep"] = bool(self.use_tdep)
+        p["rod_L"] = self.f("rod_L", 0.0)
+        if self.input_mode == "shoulder" and self.shoe != SHOE_NONE:
+            p["k2"] = self.f("k_shoe", 0.0)
+        else:
+            p["k2"] = 0.0
+        return p
+
+    # ---------- параметры режима ----------
+    def candidates(self):
+        """Параметры режима, доступные при текущем процессе."""
+        return AX_BY_MODE[self.input_mode]
+
+    def order(self):
+        """Варьируемые параметры — по ним идут оси, матрица и регрессия."""
+        return [s for s in self.candidates() if self.vary.get(s) == "range"]
+
+    def rng(self, sym):
+        return self.f(RANGE_KEYS[sym][0]), self.f(RANGE_KEYS[sym][1])
+
+    def all_vals(self, override=None):
+        """Значения всех параметров режима, с переопределением осей."""
+        vals = {s: float(self.fix.get(s, 0.0)) for s in self.candidates()}
+        if override:
+            vals.update(override)
+        return vals
+
+    def ensure_axes(self):
+        """X и Y должны быть варьируемыми и различными."""
+        order = self.order()
+        if not order:
+            return
+        if self.xaxis not in order:
+            self.xaxis = order[0]
+        if len(order) >= 2 and (self.yaxis not in order or self.yaxis == self.xaxis):
+            self.yaxis = next(s for s in order if s != self.xaxis)
+
+    def resolve(self, p, vals, point=False):
+        """Параметры режима -> (omega, R_mm, H_mm, p_eff) для compute_T.
+
+        Здесь процесс переводится в геометрию контакта: для shoulderless
+        высота слоя следует из баланса объёма, для shouldered — эффективный
+        радиус ограничен радиусом плеча."""
+        F_N = vals["F"] * 1e3                          # кН -> Н
+        if self.input_mode == "kin":
+            R = vals["D"] / 2.0
+            vz, vx = vals["vz"], vals["vx"]
+            wb = self.f("w_bead") if (point and self.beadw_on) else 2.0 * R
+            H = math.pi * R * R * (vz / vx) / wb        # мм
+            pe = dict(p)
+            pe["F"] = F_N
+            pe["v"] = vx * 1e-3
+            pe["v_z"] = vz * 1e-3
+            pe["use_pe"] = True
+            pe["use_feed"] = bool(self.use_feedsink)
+            return vals["ω"], R, H, pe
+        if self.input_mode == "shoulder":
+            a = vals["a"]; rshoe = self.f("R_shoe")
+            vz, vx, H = vals["vz"], vals["vx"], vals["H"]
+            R_eff = np.minimum(a * a * vz / (2.0 * H * vx), rshoe)
+            pe = dict(p)
+            pe["F"] = F_N
+            pe["v"] = vx * 1e-3
+            pe["feedvol"] = (a * 1e-3) ** 2 * (vz * 1e-3)
+            pe["use_pe"] = True
+            pe["use_feed"] = bool(self.use_feedsink)
+            if self.bore:
+                pe["r_in"] = (a / math.sqrt(math.pi)) * 1e-3
+            return vals["ω"], R_eff, H, pe
+        return vals["ω"], vals["R"], vals["H"], p
+
+    def window(self):
+        """Границы технологического окна в °C для текущего солидуса."""
+        return window_C(self.f("T_solidus"), self.wlo, self.whi)
+
+    # ---------- сетка карты ----------
+    def grid(self, n=140):
+        """Карта T_peak по двум осям: (xN, yN, xv, yv, T, fixed)."""
+        p = self.params()
+        self.ensure_axes()
+        order = self.order()
+        if len(order) < 2:                 # для карты нужно ≥2 варьируемых
+            return None
+        xN, yN = self.xaxis, self.yaxis
+        fixed = {s: float(self.fix[s]) for s in self.candidates() if s not in (xN, yN)}
+        rx, ry = self.rng(xN), self.rng(yN)
+        if rx[1] <= rx[0] or ry[1] <= ry[0]:
+            return None
+        xv = np.linspace(rx[0], rx[1], n)
+        yv = np.linspace(ry[0], ry[1], n)
+        X, Y = np.meshgrid(xv, yv)
+        omega, R, H, pe = self.resolve(p, self.all_vals({xN: X, yN: Y}))
+        T = compute_T(omega, R, H, pe, self.model_key)
+        return xN, yN, xv, yv, T, fixed
+
+    def point(self):
+        """Расчёт в точке по полям pt_*: (T, audit, vals)."""
+        p = self.params()
+        vals = {s: self.f(PT_KEY[s]) for s in self.candidates()}
+        omega, R, H, pe = self.resolve(p, vals, point=True)
+        T, aud = compute_T_audit(omega, R, H, pe)
+        return T, aud, vals
+
+    def tau_at(self, T, p, Rc_mm=None):
+        """Контактное касательное напряжение [МПа] при температуре T."""
+        Tsol = p["T_solidus"]
+        sy = p["sigma_ref"] * max(0.0, 1.0 - ((float(T) - p["T0"]) /
+                                              (p["T_ref"] - p["T0"])) ** p["m"])
+        tau_y = sy / SQRT3
+        if Rc_mm:
+            p_contact = p.get("F", 0.0) / (math.pi * (float(Rc_mm) * 1e-3) ** 2) / 1e6
+            mu = p.get("mu", 0.5)
+            if p.get("use_mu_tdep") and p.get("mu_tab"):
+                mu = interp_prop(p["mu_tab"], mu, T)
+            return min(mu * p_contact, tau_y)
+        return tau_y
+
+    # ---------- план эксперимента ----------
+    def levels(self):
+        """Уровни −1/0/+1 (min/середина/max) для варьируемых параметров."""
+        order = self.order()
+        lv = {}
+        for s in order:
+            lo, hi = self.rng(s)
+            lv[s] = [lo, 0.5 * (lo + hi), hi]
+        return order, lv
+
+    def matrix_rows(self):
+        """Полный план 3^N: (номер, коды, значения, τ, T_peak °C, T_peak K)."""
+        p = self.params()
+        order, lv = self.levels()
+        if not order:
+            return []
+        rows, n = [], 0
+        for idx in itertools.product(range(3), repeat=len(order)):
+            n += 1
+            vals = self.all_vals({order[j]: lv[order[j]][idx[j]]
+                                  for j in range(len(order))})
+            omega, R, H, pe = self.resolve(p, vals)
+            T = compute_T(omega, R, H, pe, self.model_key)
+            tau = self.tau_at(T, pe, R)
+            rows.append((n, tuple(i - 1 for i in idx),
+                         tuple(vals[s] for s in order), tau, T, c_to_k(T)))
+        return rows
+
+    def fit_regression(self):
+        """МНК-полином T_peak по точкам плана: (c0, lin, quad, inter, order)."""
+        p = self.params()
+        order, lv = self.levels()
+        N = len(order)
+        if N < 1:
+            return None
+        F = [[] for _ in range(N)]
+        for idx in itertools.product(range(3), repeat=N):
+            for j in range(N):
+                F[j].append(lv[order[j]][idx[j]])
+        F = [np.array(c) for c in F]
+        Ts = []
+        for kk in range(len(F[0])):
+            vals = self.all_vals({order[j]: F[j][kk] for j in range(N)})
+            omega, R, H, pe = self.resolve(p, vals)
+            Ts.append(float(compute_T(omega, R, H, pe, self.model_key)))
+        T = np.array(Ts)
+        pairs = list(itertools.combinations(range(N), 2))
+        A = [np.ones_like(F[0])] + F + [F[j] * F[j] for j in range(N)]
+        A += [F[a] * F[b] for a, b in pairs]
+        c, *_ = np.linalg.lstsq(np.column_stack(A), T, rcond=None)
+        c = [round(float(v), 6) for v in c]
+        return (c[0], c[1:1 + N], c[1 + N:1 + 2 * N], c[1 + 2 * N:], order)
+
+    # ---------- проект ----------
+    def to_dict(self):
+        """Состояние для сохранения в .afsd (JSON)."""
+        return dict(fields=dict(self.fields),
+                    vary=dict(self.vary),
+                    fix={k: float(v) for k, v in self.fix.items()},
+                    preset=self.preset, substrate=self.substrate,
+                    sub_same=self.sub_same, shoe=self.shoe, bore=self.bore,
+                    mu_tdep=self.mu_tdep, mu_pair=self.mu_pair,
+                    use_feedsink=self.use_feedsink, use_pe=self.use_pe,
+                    use_tdep=self.use_tdep, beadw_on=self.beadw_on,
+                    input_mode=self.input_mode, model_key=self.model_key,
+                    xaxis=self.xaxis, yaxis=self.yaxis,
+                    wlo=self.wlo, whi=self.whi)
+
+    def from_dict(self, d):
+        """Восстановить состояние из .afsd. Неизвестные ключи игнорируются."""
+        self.fields.update(d.get("fields", {}))
+        self.vary.update(d.get("vary", {}))
+        for k, v in (d.get("fix") or {}).items():
+            try:
+                self.fix[k] = float(v)
+            except (TypeError, ValueError):
+                pass
+        for name in ("preset", "substrate", "shoe", "mu_pair",
+                     "input_mode", "model_key", "xaxis", "yaxis"):
+            if name in d:
+                setattr(self, name, d[name])
+        for name in ("sub_same", "bore", "mu_tdep", "use_feedsink",
+                     "use_pe", "use_tdep", "beadw_on"):
+            if name in d:
+                setattr(self, name, bool(d[name]))
+        for name in ("wlo", "whi"):
+            if name in d:
+                try:
+                    setattr(self, name, float(d[name]))
+                except (TypeError, ValueError):
+                    pass
+
+
+def poly_text(c0, lin, quad, inter, syms):
+    """Полином одной строкой: T_peak = c0 + a·ω + … (² квадраты, · произведения)."""
+    N = len(syms)
+    terms = [(c0, "")]
+    terms += [(lin[j], syms[j]) for j in range(N)]
+    terms += [(quad[j], syms[j] + "²") for j in range(N)]
+    pairs = list(itertools.combinations(range(N), 2))
+    terms += [(inter[i], syms[a] + "·" + syms[b]) for i, (a, b) in enumerate(pairs)]
+    out, first = "T_peak = ", True
+    for coef, sym in terms:
+        if coef == 0:
+            continue
+        sign = "−" if coef < 0 else "+"
+        body = ("%g·%s" % (abs(coef), sym)) if sym else "%g" % abs(coef)
+        if first:
+            out += ("−" + body) if sign == "−" else body
+            first = False
+        else:
+            out += " " + sign + " " + body
+    return out if not first else "T_peak = 0"
