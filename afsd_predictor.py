@@ -41,6 +41,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 # ---------------------------------------------------------------------------
 from afsd_core import *            # noqa: F401,F403
 # приватные имена (с подчёркиванием) через «import *» не переносятся — явно:
+import afsd_plot
 from afsd_core import (_app_dir, _user_file, _bundled_file,      # noqa: F401
                        _load_json_db, _save_json_db, _vbisect)
 import afsd_core as _core
@@ -1196,16 +1197,11 @@ class App(tk.Tk):
         return lo * Ts_K - 273.15, hi * Ts_K - 273.15
 
     def _plot_label(self, name):
-        n, sym, u = self.JLAB[name]
-        if name == "D" and self.toolrad_var.get():        # радиус вместо диаметра
-            n, sym = "Tool Radius", "R"
-        return r"%s, $%s$ (%s)" % (n, sym, u)
+        # подписи берём из общего модуля — чтобы совпадали с Qt-окном
+        return afsd_plot.plot_label(name, bool(self.toolrad_var.get()))
 
     def _plot_annot(self, name, val):
-        n, sym, u = self.JLAB[name]
-        if name == "D" and self.toolrad_var.get():
-            n, sym, val = "Tool Radius", "R", val / 2.0
-        return r"%s, $%s$ = %g %s" % (n, sym, val, u)
+        return afsd_plot.plot_annot(name, val, bool(self.toolrad_var.get()))
 
     def _load_preset(self):
         pr = self.materials[self.preset_var.get()]
@@ -2017,156 +2013,42 @@ class App(tk.Tk):
         self.canvas.draw()
         self._refresh_matrix()
 
-    def _draw_2d(self, X, Y, T, xN, yN, Tmin, Tmax, annot):
-        fs = self.plot_fs
-        TNR = "Times New Roman"
-        matplotlib.rcParams["mathtext.fontset"] = "stix"   # Times-подобные формулы
-        ax = self.ax = self.fig.add_subplot(111)
-        nlev = max(4, self._iv(self.nlev_var, 24))         # число градиентных цветов
-        win_mode = self.colormode_var.get() == "window"
-        if win_mode:
-            cmap = matplotlib.colormaps["turbo"].with_extremes(under="white", over="white")
-            levels = np.linspace(Tmin, Tmax, nlev)
-            cf = ax.contourf(X, Y, T, levels=levels, cmap=cmap, extend="both")
-        else:
-            cf = ax.contourf(X, Y, T, levels=nlev, cmap="turbo")
-        cb = self.fig.colorbar(cf, ax=ax, pad=self._fv(self.cbar_pad_var, self.cbar_pad))
-        crot = 270 if self.cbar_flip_var.get() else 90        # надпись шкалы на 180°
-        cb.set_label(r"Peak Temperature, $T$ ($^{\circ}$C)", fontsize=fs, fontname=TNR,
-                     color="k", rotation=crot)
-        # позиция надписи шкалы по X (в долях ширины шкалы): <0 — слева, >1 — справа
-        cb.ax.yaxis.set_label_coords(self._fv(self.cbar_lblx_var, 3.5), 0.5)
-        cb.ax.tick_params(labelsize=fs - 1, colors="k")
-        for lab in cb.ax.get_yticklabels():
-            lab.set_fontname(TNR)
-        stroke = [mpe.withStroke(linewidth=2.4, foreground="white")]   # белая обводка (только пределы)
-        # изотермы — чёрные тонкие линии с чёрными подписями (Times, без обводки)
-        cs = ax.contour(X, Y, T, levels=10, colors="k", linewidths=0.5, alpha=0.6)
-        for t in ax.clabel(cs, inline=True, fontsize=max(6, fs - 2), fmt="%.0f", colors="k"):
-            t.set_fontname(TNR)
-        # зелёная подсветка окна — по желанию (иначе границы видны лишь по линиям,
-        # а цвет остаётся чистым градиентом без резкого зелёного перехода)
-        if (not win_mode and self.winfill_var.get()
-                and T.max() >= Tmin and T.min() <= Tmax):
-            mask = np.where((T >= Tmin) & (T <= Tmax), 1.0, np.nan)
-            ax.contourf(X, Y, mask, levels=[0.5, 1.5], colors=["#19d219"], alpha=0.30)
-        _lo, _hi = self._wfracs()
-        # Гомологическая температура T/T_s — отношение АБСОЛЮТНЫХ температур,
-        # поэтому безразмерна и вопроса о единицах не возникает. В скобках —
-        # соответствующее значение в °C, чтобы границу можно было читать прямо
-        # с карты (шкала и изолинии тоже в °C).
-        for lev, col, tag in [(Tmin, "#1565ff", r"$T/T_{s} = %g$" % _lo),
-                              (Tmax, "#e8112d", r"$T/T_{s} = %g$" % _hi)]:
-            try:
-                c = ax.contour(X, Y, T, levels=[lev], colors=col, linewidths=2.0,
-                               linestyles="--")
-                for t in ax.clabel(c, fmt={lev: f"{tag} ({lev:.0f})"},
-                                   fontsize=max(6, fs - 1),
-                                   colors="k"):
-                    t.set_fontname(TNR); t.set_path_effects(stroke)
-            except Exception:
-                pass
-        self._draw_points(ax, X, Y, xN, yN, fs, TNR)
-        # аннотация фикс. параметров (журнальный стиль, позиция настраивается)
-        if annot:
-            ax_, ay = self._fv(self.annotx_var, 0.97), self._fv(self.annoty_var, 0.96)
-            ha = "right" if ax_ >= 0.5 else "left"
-            va = "top" if ay >= 0.5 else "bottom"
-            afs = max(4.0, fs * self._fv(self.annotscale_var, 1.0))   # масштаб рамки
-            ax.text(ax_, ay, annot, transform=ax.transAxes, ha=ha, va=va,
-                    fontsize=afs, fontname=TNR, color="k", zorder=50,
-                    bbox=dict(boxstyle="round,pad=0.4", fc="white", ec="0.5", alpha=1.0))
-        lblpad = self._iv(self.lblpad_var, 6)
-        tickpad = self._iv(self.tickpad_var, 3)
-        ax.set_xlabel(self._plot_label(xN), fontsize=fs, fontname=TNR, color="k", labelpad=lblpad)
-        ax.set_ylabel(self._plot_label(yN), fontsize=fs, fontname=TNR, color="k", labelpad=lblpad)
-        # палочки внутрь на всех 4 сторонах (на параллельных осях тоже), цифры — низ/лево
-        ax.tick_params(direction="in", labelsize=fs - 1, colors="k", pad=tickpad,
-                       top=True, right=True, labeltop=False, labelright=False)
-        ax.tick_params(which="minor", direction="in", top=True, right=True,
-                       labeltop=False, labelright=False)
-        # ось диаметра в радиусах (R = D/2), если включено
-        if self.toolrad_var.get():
-            from matplotlib.ticker import FuncFormatter
-            half = FuncFormatter(lambda v, _p: ("%g" % (v / 2.0)))
-            if xN == "D":
-                ax.xaxis.set_major_formatter(half)
-            if yN == "D":
-                ax.yaxis.set_major_formatter(half)
-        for lab in ax.get_xticklabels() + ax.get_yticklabels():
-            lab.set_fontname(TNR); lab.set_color("k")
-        aspect = self._aspect_value()                      # высота/ширина бокса (из W:H)
-        if aspect > 0.05:
-            try:
-                ax.set_box_aspect(aspect)
-            except Exception:
-                pass
-        self._overlay_regression(fs)
+    def _plot_style(self):
+        """Настройки рисунка из панели оформления — для общего модуля."""
+        return afsd_plot.PlotStyle(
+            fs=self.plot_fs,
+            nlev=self._iv(self.nlev_var, 24),
+            window_only=(self.colormode_var.get() == "window"),
+            winfill=bool(self.winfill_var.get()),
+            toolrad=bool(self.toolrad_var.get()),
+            lblpad=self._iv(self.lblpad_var, 6),
+            tickpad=self._iv(self.tickpad_var, 3),
+            cbar_pad=self._fv(self.cbar_pad_var, self.cbar_pad),
+            cbar_lblx=self._fv(self.cbar_lblx_var, 3.5),
+            cbar_flip=bool(self.cbar_flip_var.get()),
+            annotx=self._fv(self.annotx_var, 0.97),
+            annoty=self._fv(self.annoty_var, 0.96),
+            annotscale=self._fv(self.annotscale_var, 1.0),
+            aspect=self._aspect_value(),
+            wlo=self._wfracs()[0], whi=self._wfracs()[1],
+            elev=self._iv(self.elev_var, 28),
+            azim=self._iv(self.azim_var, -130),
+            n3d=self._iv(self.n3d_var, self.n3d),
+            reg_text=(getattr(self, "_reduced_math", None)
+                      if self.showreg_var.get() else None),
+        )
 
-    def _overlay_regression(self, fs):
-        """Сокращённое уравнение T_peak(x,y) внизу карты — по тумблеру."""
-        show = self.showreg_var.get() and getattr(self, "_reduced_math", None)
-        self.fig.tight_layout(rect=(0, 0.08, 1, 1) if show else (0, 0, 1, 1))
-        if show:
-            self.fig.text(0.5, 0.015, self._reduced_math, ha="center", va="bottom",
-                          fontsize=max(7, fs - 2), family="Times New Roman", color="#111",
-                          bbox=dict(boxstyle="round,pad=0.3", fc="#f6f6f6", ec="0.6"))
+    def _draw_2d(self, X, Y, T, xN, yN, Tmin, Tmax, annot):
+        # Рисует общий модуль — тот же, что и у Qt-окна, поэтому рисунок
+        # в обеих программах одинаков и годится для статьи без правок.
+        self.ax = afsd_plot.draw_2d(self.fig, X, Y, T, xN, yN, Tmin, Tmax,
+                                    annot, self._plot_style(),
+                                    points=self._points)
 
     def _draw_3d(self, X, Y, T, xN, yN, Tmin, Tmax, annot):
-        fs = self.plot_fs
-        TNR = "Times New Roman"
-        matplotlib.rcParams["mathtext.fontset"] = "stix"
-        ax = self.ax = self.fig.add_subplot(111, projection="3d")
-        rc = self._iv(self.n3d_var, self.n3d)   # плотность сетки 3D (из панели стиля)
-        if self.colormode_var.get() == "window":
-            from matplotlib.colors import Normalize
-            cmap = matplotlib.colormaps["turbo"].with_extremes(under="white", over="white")
-            norm = Normalize(Tmin, Tmax, clip=False)
-            surf = ax.plot_surface(X, Y, T, cmap=cmap, norm=norm, linewidth=0,
-                                   antialiased=False, alpha=1.0, rcount=rc, ccount=rc)
-        else:
-            surf = ax.plot_surface(X, Y, T, cmap="turbo", linewidth=0,
-                                   antialiased=False, alpha=1.0, rcount=rc, ccount=rc)
-        cb = self.fig.colorbar(surf, ax=ax, pad=self._fv(self.cbar_pad_var, self.cbar_pad) + 0.04,
-                               shrink=0.6)
-        crot = 270 if self.cbar_flip_var.get() else 90
-        cb.set_label(r"Peak Temperature, $T$ ($^{\circ}$C)", fontsize=fs, fontname=TNR,
-                     color="k", rotation=crot)
-        cb.ax.yaxis.set_label_coords(self._fv(self.cbar_lblx_var, 3.5), 0.5)
-        cb.ax.tick_params(labelsize=fs - 1, colors="k")
-        for lab in cb.ax.get_yticklabels():
-            lab.set_fontname(TNR)
-        xp = np.array([[X.min(), X.max()], [X.min(), X.max()]])
-        yp = np.array([[Y.min(), Y.min()], [Y.max(), Y.max()]])
-        if T.min() <= Tmin <= T.max():
-            ax.plot_surface(xp, yp, np.full_like(xp, Tmin), color="#1565ff", alpha=0.18)
-        if T.min() <= Tmax <= T.max():
-            ax.plot_surface(xp, yp, np.full_like(xp, Tmax), color="#e8112d", alpha=0.18)
-        ax.set_xlabel(self._plot_label(xN), fontsize=fs - 1, fontname=TNR, color="k")
-        ax.set_ylabel(self._plot_label(yN), fontsize=fs - 1, fontname=TNR, color="k")
-        ax.set_zlabel(r"Peak Temperature, $T$ ($^{\circ}$C)", fontsize=fs - 1, fontname=TNR, color="k")
-        ax.tick_params(labelsize=fs - 2, colors="k")
-        if self.toolrad_var.get():
-            from matplotlib.ticker import FuncFormatter
-            half = FuncFormatter(lambda v, _p: ("%g" % (v / 2.0)))
-            if xN == "D":
-                ax.xaxis.set_major_formatter(half)
-            if yN == "D":
-                ax.yaxis.set_major_formatter(half)
-        for lab in (ax.get_xticklabels() + ax.get_yticklabels() + ax.get_zticklabels()):
-            lab.set_fontname(TNR); lab.set_color("k")
-        if annot:
-            axx, ayy = self._fv(self.annotx_var, 0.97), self._fv(self.annoty_var, 0.96)
-            ha = "right" if axx >= 0.5 else "left"
-            va = "top" if ayy >= 0.5 else "bottom"
-            afs = max(4.0, fs * self._fv(self.annotscale_var, 1.0))
-            ax.text2D(axx, ayy, annot, transform=ax.transAxes, ha=ha, va=va,
-                      fontsize=afs, fontname=TNR, color="k")
-        ax.view_init(elev=self._iv(self.elev_var, 28), azim=self._iv(self.azim_var, -130))
-        if self.showreg_var.get() and getattr(self, "_reduced_math", None):
-            self.fig.text(0.5, 0.015, self._reduced_math, ha="center", va="bottom",
-                          fontsize=max(7, fs - 2), family=TNR, color="#111",
-                          bbox=dict(boxstyle="round,pad=0.3", fc="#f6f6f6", ec="0.6"))
+        self.ax = afsd_plot.draw_3d(self.fig, X, Y, T, xN, yN, Tmin, Tmax,
+                                    annot, self._plot_style())
+
 
     # ---------- регрессия: общий список членов и LaTeX ----------
     @staticmethod

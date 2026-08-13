@@ -691,6 +691,25 @@ TR = {
     "ask_save": dict(uk="Проєкт змінено. Зберегти перед виходом?",
                      ru="Проект изменён. Сохранить перед выходом?",
                      en="The project has changed. Save before closing?"),
+    "grp_paper": dict(uk="Для статті", ru="Для статьи", en="For the paper"),
+    "chk_toolrad": dict(uk="Вісь D як радіус R", ru="Ось D как радиус R",
+                        en="D axis as radius R"),
+    "chk_showreg": dict(uk="Рівняння під картою", ru="Уравнение под картой",
+                        en="Equation below the map"),
+    "chk_cbflip": dict(uk="Напис шкали на 180°", ru="Надпись шкалы на 180°",
+                       en="Colourbar label rotated 180°"),
+    "lbl_aspw": dict(uk="Ширина (відн.)", ru="Ширина (отн.)", en="Width (rel.)"),
+    "lbl_asph": dict(uk="Висота (відн.)", ru="Высота (отн.)", en="Height (rel.)"),
+    "lbl_lblpad": dict(uk="Відступ назв осей", ru="Отступ названий осей",
+                       en="Axis label padding"),
+    "lbl_tickpad": dict(uk="Відступ цифр", ru="Отступ цифр", en="Tick label padding"),
+    "lbl_cbpad": dict(uk="Відступ шкали", ru="Отступ шкалы", en="Colourbar padding"),
+    "lbl_cblbl": dict(uk="Напис шкали, X", ru="Надпись шкалы, X",
+                      en="Colourbar label, X"),
+    "lbl_annotx": dict(uk="Рамка, X", ru="Рамка, X", en="Annotation box, X"),
+    "lbl_annoty": dict(uk="Рамка, Y", ru="Рамка, Y", en="Annotation box, Y"),
+    "lbl_annotsc": dict(uk="Рамка, масштаб", ru="Рамка, масштаб",
+                        en="Annotation box, scale"),
     "hdr_min": dict(uk="мін", ru="мин", en="min"),
     "hdr_max": dict(uk="макс", ru="макс", en="max"),
     "hdr_point": dict(uk="точка", ru="точка", en="point"),
@@ -736,6 +755,12 @@ ZH = {
     "grp_window": "工艺窗口", "grp_text": "文字与网格", "grp_3d": "三维视角",
     "btn_point": "计算该点", "btn_clearpts": "清除标记点",
     "ask_save": "项目已修改。退出前保存吗？",
+    "grp_paper": "论文用图", "chk_toolrad": "D 轴显示为半径 R",
+    "chk_showreg": "云图下方显示方程", "chk_cbflip": "色标标签旋转 180°",
+    "lbl_aspw": "宽度（相对）", "lbl_asph": "高度（相对）",
+    "lbl_lblpad": "轴名间距", "lbl_tickpad": "刻度数字间距",
+    "lbl_cbpad": "色标间距", "lbl_cblbl": "色标标签 X",
+    "lbl_annotx": "注释框 X", "lbl_annoty": "注释框 Y", "lbl_annotsc": "注释框缩放",
     "hdr_min": "最小", "hdr_max": "最大", "hdr_point": "点",
     "lbl_held": "固定：", "lbl_regime": "状态", "lbl_fs": "文字大小",
     "lbl_levels": "颜色级数", "lbl_n3d": "三维网格", "lbl_elev": "仰角",
@@ -1637,6 +1662,89 @@ class ModelState:
                     setattr(self, name, float(d[name]))
                 except (TypeError, ValueError):
                     pass
+
+
+def poly_body(terms):
+    """Правая часть уравнения в LaTeX/mathtext (без обрамления $…$)."""
+    out, first = "", True
+    for coef, sym in terms:
+        if coef == 0:
+            continue
+        sign = "-" if coef < 0 else "+"
+        val = "%g" % abs(coef)
+        body = (val + r"\," + sym) if sym else val
+        if first:
+            out += ("-" + body) if sign == "-" else body
+            first = False
+        else:
+            out += " " + sign + " " + body
+    return out or "0"
+
+
+def regression_latex(c0, lin, quad, inter, syms):
+    """Полное уравнение регрессии в LaTeX — для вставки в статью."""
+    N = len(syms)
+    terms = [(c0, "")]
+    terms += [(lin[j], syms[j]) for j in range(N)]
+    terms += [(quad[j], syms[j] + "^{2}") for j in range(N)]
+    pairs = list(itertools.combinations(range(N), 2))
+    terms += [(inter[i], syms[a] + r"\," + syms[b]) for i, (a, b) in enumerate(pairs)]
+    return r"T_{\mathrm{peak}} = " + poly_body(terms)
+
+
+def reduce_regression(fit, xaxis, yaxis, fixed):
+    """Свести N-факторную регрессию к T_peak(x, y): фиксированные факторы — в числа.
+
+    Возвращает (mathtext, latex) для подписи под картой и вставки в статью,
+    либо None. Нужна, чтобы уравнение на рисунке соответствовало именно тем
+    двум осям, что показаны, а не всему плану эксперимента.
+    """
+    if not fit:
+        return None
+    c0, lin, quad, inter, order = fit
+    N = len(order)
+    c0r = c0
+    cx = cy = cxx = cyy = cxy = 0.0
+    for j, s in enumerate(order):                      # линейные члены
+        if s == xaxis:
+            cx += lin[j]
+        elif s == yaxis:
+            cy += lin[j]
+        else:
+            c0r += lin[j] * fixed.get(s, 0.0)
+    for j, s in enumerate(order):                      # квадратичные
+        if s == xaxis:
+            cxx += quad[j]
+        elif s == yaxis:
+            cyy += quad[j]
+        else:
+            c0r += quad[j] * fixed.get(s, 0.0) ** 2
+    pairs = list(itertools.combinations(range(N), 2))
+    for w, (a, b) in zip(inter, pairs):                # взаимодействия
+        sa, sb = order[a], order[b]
+        a_ax, b_ax = sa in (xaxis, yaxis), sb in (xaxis, yaxis)
+        if a_ax and b_ax:                              # один — x, другой — y
+            cxy += w
+        elif a_ax:                                     # sb фиксирован
+            if sa == xaxis:
+                cx += w * fixed.get(sb, 0.0)
+            else:
+                cy += w * fixed.get(sb, 0.0)
+        elif b_ax:                                     # sa фиксирован
+            if sb == xaxis:
+                cx += w * fixed.get(sa, 0.0)
+            else:
+                cy += w * fixed.get(sa, 0.0)
+        else:                                          # оба фиксированы
+            c0r += w * fixed.get(sa, 0.0) * fixed.get(sb, 0.0)
+    rnd = lambda v: round(float(v), 6)
+    c0r, cx, cy, cxx, cyy, cxy = map(rnd, (c0r, cx, cy, cxx, cyy, cxy))
+    sx, sy = AX_MATH[xaxis], AX_MATH[yaxis]
+    body = poly_body([(c0r, ""), (cx, sx), (cy, sy),
+                      (cxx, sx + "^{2}"), (cyy, sy + "^{2}"), (cxy, sx + r"\," + sy)])
+    return (r"$T_{\mathrm{peak}}(%s,\,%s)=%s$" % (sx, sy, body),
+            "\\begin{equation}\n  T_{\\mathrm{peak}}(%s,\\ %s) = %s\n\\end{equation}"
+            % (sx, sy, body))
 
 
 def poly_text(c0, lin, quad, inter, syms):

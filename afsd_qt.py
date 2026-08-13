@@ -35,6 +35,7 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
 import afsd_core as core
+import afsd_plot as plot
 from afsd_theme import THEMES, qss, mpl_rc, SP_S, SP_M, SP_L, SP_XL
 
 
@@ -165,7 +166,9 @@ class PlotPane(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
-        self.fig = Figure(figsize=(7.2, 5.4), dpi=100)
+        # Фигура всегда на белом: рисунок журнальный и идёт в статью как есть,
+        # тёмная тема оформляет только окно вокруг него.
+        self.fig = Figure(figsize=(7.2, 5.4), dpi=100, facecolor="white")
         self.canvas = FigureCanvasQTAgg(self.fig)
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.toolbar = NavigationToolbar2QT(self.canvas, self)
@@ -209,6 +212,7 @@ class MainWindow(QMainWindow):
         self._project_path = None
         self._last_grid = None
         self._points = []             # нанесённые точки: [{label, vals, T}]
+        self._reduced_math = None     # уравнение T(x,y) под картой
         self._building = False        # защита от рекурсии при обновлении полей
         # реестры для смены языка на лету: (виджет, ключ перевода, запасной текст)
         self._titled_cards = []
@@ -567,6 +571,46 @@ class MainWindow(QMainWindow):
         r = QHBoxLayout(); r.addWidget(self._lbl("lbl_azim", "Азимут"))
         r.addWidget(self.sl_azim, 1); c_3d.body.addLayout(r)
         lay.addWidget(c_3d)
+
+        # --- журнальный вид: то, чем рисунок доводится под требования статьи ---
+        c_pap = self._card("grp_paper", "Для статьи")
+        self.chk_winonly = self._chk("color_win", "Заливка только в окне")
+        self.chk_winonly.toggled.connect(lambda _v: self.redraw())
+        c_pap.body.addWidget(self.chk_winonly)
+        self.chk_toolrad = self._chk("chk_toolrad", "Ось D как радиус R")
+        self.chk_toolrad.toggled.connect(lambda _v: self.redraw())
+        c_pap.body.addWidget(self.chk_toolrad)
+        self.chk_showreg = self._chk("chk_showreg", "Уравнение под картой")
+        self.chk_showreg.toggled.connect(lambda _v: self.redraw())
+        c_pap.body.addWidget(self.chk_showreg)
+        self.chk_cbflip = self._chk("chk_cbflip", "Надпись шкалы на 180°")
+        self.chk_cbflip.toggled.connect(lambda _v: self.redraw())
+        c_pap.body.addWidget(self.chk_cbflip)
+
+        def spin(key, fb, lo, hi, val, step=1.0, dec=0):
+            sp = QDoubleSpinBox() if dec else QSpinBox()
+            sp.setRange(lo, hi)
+            if dec:
+                sp.setDecimals(dec); sp.setSingleStep(step)
+            sp.setValue(val)
+            sp.valueChanged.connect(lambda _v: self.redraw())
+            row = QHBoxLayout()
+            row.addWidget(self._lbl(key, fb), 1)
+            row.addWidget(sp, 0)
+            c_pap.body.addLayout(row)
+            return sp
+
+        # отношение сторон бокса осей: журналы просят конкретную пропорцию
+        self.sp_aspw = spin("lbl_aspw", "Ширина (отн.)", 0.5, 20.0, 4.0, 0.5, 2)
+        self.sp_asph = spin("lbl_asph", "Высота (отн.)", 0.5, 20.0, 3.0, 0.5, 2)
+        self.sp_lblpad = spin("lbl_lblpad", "Отступ названий осей", 0, 40, 6)
+        self.sp_tickpad = spin("lbl_tickpad", "Отступ цифр", 0, 30, 3)
+        self.sp_cbpad = spin("lbl_cbpad", "Отступ шкалы", -0.02, 0.40, 0.06, 0.01, 2)
+        self.sp_cblbl = spin("lbl_cblbl", "Надпись шкалы, X", -6.0, 8.0, 3.5, 0.5, 1)
+        self.sp_annotx = spin("lbl_annotx", "Рамка, X", 0.0, 1.0, 0.97, 0.01, 2)
+        self.sp_annoty = spin("lbl_annoty", "Рамка, Y", 0.0, 1.0, 0.96, 0.01, 2)
+        self.sp_annotsc = spin("lbl_annotsc", "Рамка, масштаб", 0.3, 3.0, 1.0, 0.05, 2)
+        lay.addWidget(c_pap)
         lay.addStretch(1)
         return host
 
@@ -843,11 +887,16 @@ class MainWindow(QMainWindow):
 
     # ---------- тема ----------
     def apply_theme(self, name):
+        """Тема меняет интерфейс, но НЕ рисунок.
+
+        График остаётся журнальным — белый фон, чёрный текст, Times New
+        Roman, — потому что он идёт в статью в том виде, в каком его видно
+        на экране. Тёмная тема оформляет только окно вокруг него.
+        """
         self.theme_name = name
         pal = THEMES[name]
         self.pal = pal
         QApplication.instance().setStyleSheet(qss(pal))
-        matplotlib.rcParams.update(mpl_rc(pal))
         if hasattr(self, "act_theme"):
             self.act_theme.setChecked(name == "dark")
         self.redraw()
@@ -900,6 +949,17 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("%s: %s" % (self.t("err", "Ошибка"), exc), 4000)
             g = None
         self._last_grid = g
+        # уравнение T(x,y) для подписи под картой — по текущим осям
+        self._reduced_math = self._reduced_latex = None
+        try:
+            xN, yN = self.st.xaxis, self.st.yaxis
+            fixed = {s: float(self.st.fix[s]) for s in self.st.candidates()
+                     if s not in (xN, yN)}
+            red = core.reduce_regression(self.st.fit_regression(), xN, yN, fixed)
+            if red:
+                self._reduced_math, self._reduced_latex = red
+        except Exception:
+            pass
         if g is None:
             # Карте нужны две оси, но плану 3^N хватает и одного фактора —
             # таблица и регрессия обновляются в любом случае.
@@ -921,59 +981,47 @@ class MainWindow(QMainWindow):
             Tmin, Tmax = self.st.window()
         except Exception:
             return
-        pal = self.pal
-        fs = self.sp_fs.value()
         self.plot.fig.clf()
         X, Y = np.meshgrid(xv, yv)
+        stl = self._plot_style()
+        annot = plot.annot_text(fixed, stl.toolrad)
+        # Рисует общий модуль — тот же, что и у Tk-окна: журнальное оформление
+        # (Times New Roman, изотермы, рамка фикс-параметров) одно на обе программы,
+        # чтобы рисунок годился для статьи без правок.
         if self.view == "3D":
-            self._draw_3d(X, Y, T, xN, yN, Tmin, Tmax, fs)
+            plot.draw_3d(self.plot.fig, X, Y, T, xN, yN, Tmin, Tmax, annot, stl)
         else:
-            self._draw_2d(X, Y, T, xN, yN, Tmin, Tmax, fs)
-        self.plot.style_axes(pal)
+            plot.draw_2d(self.plot.fig, X, Y, T, xN, yN, Tmin, Tmax, annot, stl,
+                         points=self._points)
+        self.plot.canvas.draw_idle()
 
-    def _draw_2d(self, X, Y, T, xN, yN, Tmin, Tmax, fs):
-        pal = self.pal
-        ax = self.plot.fig.add_subplot(111)
-        cs = ax.contourf(X, Y, T, levels=self.sp_lev.value(), cmap="magma")
-        if self.chk_winfill.isChecked():
-            mask = np.where((T >= Tmin) & (T <= Tmax), 1.0, np.nan)
-            ax.contourf(X, Y, mask, levels=[0.5, 1.5], colors=["#19d219"], alpha=0.28)
-        # границы окна: гомологическая температура — отношение абсолютных,
-        # поэтому в подписи и доля, и её значение в °C
-        for lev, col, frac in ((Tmin, pal.accent, self.st.wlo),
-                               (Tmax, pal.danger, self.st.whi)):
-            try:
-                c = ax.contour(X, Y, T, levels=[lev], colors=col,
-                               linewidths=1.8, linestyles="--")
-                ax.clabel(c, fmt={lev: "$T/T_s=%g$ (%.0f)" % (frac, lev)},
-                          fontsize=max(6, fs - 2))
-            except Exception:
-                pass
-        cb = self.plot.fig.colorbar(cs, ax=ax, pad=0.02)
-        cb.set_label("$T_{peak}$, °C", color=pal.text, fontsize=fs)
-        cb.ax.tick_params(colors=pal.text_dim, labelsize=max(6, fs - 2))
-        ax.set_xlabel(self._axis_label(xN), fontsize=fs)
-        ax.set_ylabel(self._axis_label(yN), fontsize=fs)
-        ax.tick_params(labelsize=max(6, fs - 2))
-        self._draw_points(ax, xN, yN, fs)
-        self.plot.fig.tight_layout()
+    def _plot_style(self):
+        """Настройки рисунка из панели «Оформление»."""
+        return plot.PlotStyle(
+            fs=self.sp_fs.value(),
+            nlev=self.sp_lev.value(),
+            window_only=self.chk_winonly.isChecked(),
+            winfill=self.chk_winfill.isChecked(),
+            toolrad=self.chk_toolrad.isChecked(),
+            cbar_pad=self.sp_cbpad.value(),
+            cbar_lblx=self.sp_cblbl.value(),
+            cbar_flip=self.chk_cbflip.isChecked(),
+            annotx=self.sp_annotx.value(),
+            annoty=self.sp_annoty.value(),
+            annotscale=self.sp_annotsc.value(),
+            lblpad=self.sp_lblpad.value(),
+            tickpad=self.sp_tickpad.value(),
+            aspect=self._aspect_value(),
+            wlo=self.st.wlo, whi=self.st.whi,
+            elev=self.sl_elev.value(), azim=self.sl_azim.value(),
+            n3d=self.sp_n3d.value(),
+            reg_text=(self._reduced_math if self.chk_showreg.isChecked() else None),
+        )
 
-    def _draw_3d(self, X, Y, T, xN, yN, Tmin, Tmax, fs):
-        pal = self.pal
-        ax = self.plot.fig.add_subplot(111, projection="3d")
-        ax.plot_surface(X, Y, T, cmap="magma", rstride=1, cstride=1,
-                        linewidth=0, antialiased=True, alpha=0.96)
-        try:                       # плоскости границ окна — где режим допустим
-            ax.contour(X, Y, T, levels=[Tmin, Tmax], colors=[pal.accent, pal.danger],
-                       linewidths=1.4, linestyles="--", offset=float(np.nanmin(T)))
-        except Exception:
-            pass
-        ax.set_xlabel(self._axis_label(xN), fontsize=fs, labelpad=8)
-        ax.set_ylabel(self._axis_label(yN), fontsize=fs, labelpad=8)
-        ax.set_zlabel("$T_{peak}$, °C", fontsize=fs, labelpad=8)
-        ax.tick_params(labelsize=max(6, fs - 3))
-        ax.view_init(elev=self.sl_elev.value(), azim=self.sl_azim.value())
-        self.plot.fig.tight_layout()
+    def _aspect_value(self):
+        """Аспект бокса (высота/ширина) из полей отношения сторон W:H."""
+        w, h = self.sp_aspw.value(), self.sp_asph.value()
+        return (h / w) if (w > 0 and h > 0) else 0.0
 
     def calc_point(self):
         self._widgets_to_state()
@@ -1025,25 +1073,6 @@ class MainWindow(QMainWindow):
         self._points = []
         self.redraw()
 
-    def _draw_points(self, ax, xN, yN, fs):
-        """Отметить на карте рассчитанные точки — только те, что попадают в оси."""
-        for p in self._points:
-            vals = p["vals"]
-            if xN not in vals or yN not in vals:
-                continue
-            ax.plot(vals[xN], vals[yN], "o", ms=8, mfc="white", mec="black",
-                    mew=1.4, zorder=40)
-            # у правого края подпись уходила бы за поле графика — отражаем её влево
-            x0, x1 = ax.get_xlim()
-            near_right = (vals[xN] - x0) > 0.82 * (x1 - x0)
-            ax.annotate("%s  %.0f°C" % (p["label"], p["T"]),
-                        (vals[xN], vals[yN]), textcoords="offset pixels",
-                        xytext=(-12, 0) if near_right else (12, 0),
-                        ha="right" if near_right else "left", va="center",
-                        fontsize=max(7, fs - 2), fontweight="bold",
-                        color="black", zorder=41,
-                        bbox=dict(boxstyle="round,pad=0.25", fc="white",
-                                  ec="0.4", alpha=0.95))
 
     def _refresh_matrix(self):
         """Таблица плана 3^N и уравнение регрессии."""
@@ -1083,30 +1112,11 @@ class MainWindow(QMainWindow):
                 units = "[ " + ";  ".join("%s: %s" % (core.UNI.get(s, s), self._unit(s))
                                           for s in order) + " ]"
                 self.txt_reg.setPlainText(text + "\n" + units)
-                self._latex = self._regression_latex(c0, lin, quad, inter,
-                                                     [core.AX_MATH[s] for s in order])
+                self._latex = core.regression_latex(
+                    c0, lin, quad, inter, [core.AX_MATH[s] for s in order])
         except Exception as exc:
             self.txt_reg.setPlainText(str(exc))
 
-    @staticmethod
-    def _regression_latex(c0, lin, quad, inter, syms):
-        """Уравнение в LaTeX — для вставки в статью."""
-        import itertools as it
-        N = len(syms)
-        terms = [(c0, "")]
-        terms += [(lin[j], syms[j]) for j in range(N)]
-        terms += [(quad[j], syms[j] + "^{2}") for j in range(N)]
-        pairs = list(it.combinations(range(N), 2))
-        terms += [(inter[i], syms[a] + r"\," + syms[b]) for i, (a, b) in enumerate(pairs)]
-        out, first = "", True
-        for coef, sym in terms:
-            if coef == 0:
-                continue
-            sign = "-" if coef < 0 else "+"
-            body = (r"%g\,%s" % (abs(coef), sym)) if sym else "%g" % abs(coef)
-            out += (("-" if sign == "-" else "") + body) if first else " %s %s" % (sign, body)
-            first = False
-        return r"T_{\mathrm{peak}} = " + (out if out else "0")
 
     def copy_latex(self):
         tex = getattr(self, "_latex", None)
@@ -1221,14 +1231,36 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            # экспорт всегда на белом фоне: тёмная тема нужна на экране,
-            # а рисунок идёт в статью
-            self.plot.fig.savefig(path, dpi=300, facecolor="white",
-                                  bbox_inches="tight")
+            self._render_figure_to(path)
         except Exception as exc:
             QMessageBox.critical(self, self.t("err", "Ошибка"), str(exc))
             return
         self.statusBar().showMessage("%s: %s" % (self.t("saved", "Сохранено"), path), 3000)
+
+    def _render_figure_to(self, path, size=(7.2, 5.4), dpi=300):
+        """Отрисовать карту заново на отдельной фигуре и сохранить.
+
+        Экранную фигуру сохранять нельзя: tight_layout подгоняет поля под
+        текущий размер полотна, и рисунок в файле зависел бы от того, как
+        растянуто окно. Отдельная фигура фиксированного размера даёт
+        воспроизводимый результат — один и тот же файл при любом окне.
+        """
+        g = self._last_grid
+        if not g:
+            raise RuntimeError(self.t("no_data_msg2", "Сначала постройте карту"))
+        xN, yN, xv, yv, T, fixed = g
+        Tmin, Tmax = self.st.window()
+        stl = self._plot_style()
+        annot = plot.annot_text(fixed, stl.toolrad)
+        X, Y = np.meshgrid(xv, yv)
+        fig = Figure(figsize=size, dpi=dpi, facecolor="white")
+        FigureCanvasQTAgg(fig)              # канва нужна для расчёта раскладки
+        if self.view == "3D":
+            plot.draw_3d(fig, X, Y, T, xN, yN, Tmin, Tmax, annot, stl)
+        else:
+            plot.draw_2d(fig, X, Y, T, xN, yN, Tmin, Tmax, annot, stl,
+                         points=self._points)
+        fig.savefig(path, dpi=dpi, facecolor="white")
 
     def export_grid_csv(self):
         if not self._last_grid:
