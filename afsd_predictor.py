@@ -334,8 +334,11 @@ TR = {
     "lbl_t0": dict(uk="T₀, початкова [°C]", ru="T₀, начальная [°C]", en="T₀, initial [°C]"),
     "lbl_c": dict(uk="C, емпір. коеф. ×10⁻⁴ (опц.)", ru="C, эмпир. коэф. ×10⁻⁴ (опц.)",
                   en="C, empirical coef. ×10⁻⁴ (opt.)"),
-    "lbl_eta": dict(uk="η, ККД тепловкладення (0–1)", ru="η, КПД тепловложения (0–1)",
-                    en="η, heat-input efficiency (0–1)"),
+    "lbl_eta": dict(uk="η, коеф. утримання тепла (0–1)", ru="η, коэф. удержания тепла (0–1)",
+                    en="η, heat-retention factor (0–1)"),
+    "lbl_rodl": dict(uk="L, виліт прутка [мм] (0 = не враховувати)",
+                     ru="L, вылет прутка [мм] (0 = не учитывать)",
+                     en="L, unsupported rod length [mm] (0 = off)"),
     "lbl_force": dict(uk="F, осьова сила [кН]", ru="F, осевая сила [кН]", en="F, axial force [kN]"),
     "lbl_mu": dict(uk="μ, коеф. тертя пари", ru="μ, коэф. трения пары",
                    en="μ, friction coeff (pair)"),
@@ -686,7 +689,8 @@ ZH = {
     "color_full": "全范围", "color_win": "仅工作窗口", "lbl_color": "颜色",
     "lbl_style": "图形外观", "chk_tdep": "k, cₚ 随温度（表）",
     "chk_feedsink": "进给对流散热 ρcₚ·V̇", "lbl_mu": "μ，摩擦系数",
-    "lbl_eta": "η，热输入效率 (0–1)", "lbl_force": "F，轴向力 [kN]",
+    "lbl_eta": "η，热保留系数 (0–1)", "lbl_force": "F，轴向力 [kN]",
+    "lbl_rodl": "L，棒材伸出长度 [mm]（0 = 关闭）",
     "mat_refresh": "刷新", "mat_export": "导出 CSV", "set_ok": "确定", "set_cancel": "取消",
     "saved": "已保存", "err": "错误", "reg_eq_title": "回归方程 T_peak",
     "btn_copyreg_full": "复制回归 LaTeX",
@@ -938,14 +942,19 @@ def c_to_k(t_c):
 
 
 def G_pe(Pe):
-    """Скоростная поправка движущегося дискового источника (Розенталь):
-       G(Pe) = ∫₀¹ exp(−(Pe/2)·s)·I₀((Pe/2)·s) ds,  G(0)=1, монотонно убывает.
+    """Скоростная поправка движущегося дискового источника (Розенталь),
+       ИЗОТЕРМИЧЕСКОЕ распределение потока по диску (Carslaw & Jaeger §10.4):
+       q(ρ) = Q / (2πR·sqrt(R²−ρ²)) — согласовано со стационарным пределом
+       Q/(4kR) и кондуктансами стоков 4kR. Ревизия по R1-C6 (MTCOMM).
+       G(Pe) = (2/π)·∫₀¹ exp(−(Pe/2)s)·I₀((Pe/2)s)/sqrt(1−s²) ds,  G(0)=1.
+       Подстановка s=sin(t) устраняет интегрируемую особенность в s=1.
        Pe — скаляр или массив; возвращает ту же форму."""
     Pe = np.asarray(Pe, dtype=float)
-    s = np.linspace(0.0, 1.0, 64)
+    t = np.linspace(0.0, math.pi / 2.0, 256)
+    s = np.sin(t)
     arg = (np.clip(Pe, 0.0, 60.0)[..., None] / 2.0) * s
     integ = np.exp(-arg) * np.i0(arg)
-    return np.trapezoid(integ, s, axis=-1)
+    return (2.0 / math.pi) * np.trapezoid(integ, t, axis=-1)
 
 
 def _vbisect(func, lo, hi, iters=70):
@@ -991,6 +1000,7 @@ def solve_Tpeak(omega_rpm, R_mm, H_mm, p, audit=False):
     use_tdep = p.get("use_tdep")
     kt_sub, cpt_sub = p.get("kt_sub"), p.get("cpt_sub")
     cpt_dep = p.get("cpt_dep")
+    kt_dep = p.get("kt_dep")           # k(T) ПРУТКА — нужна для стока в патрон
     rho_dep = p.get("rho_dep", p["rho"])
     cp_dep0 = p.get("cp_dep", p["cp"])
     v_z = p.get("v_z", 0.0)
@@ -1017,6 +1027,27 @@ def solve_Tpeak(omega_rpm, R_mm, H_mm, p, audit=False):
 
     shape = np.broadcast(omega_rpm, R, H).shape
 
+    # --- сток в пруток (утечка в патрон) -------------------------------------
+    # Стационарное 1-D поле в прутке, подаваемом К контакту со скоростью v_f,
+    # дальний конец удерживается патроном на T0 при вылете L:
+    #     alpha_r*T'' + v_f*T' = 0,  T(0)=T_peak,  T(L)=T0
+    # Тепло, забираемое прутком у контакта = rho*cp*Vdot*(Tp-T0)/(1-exp(-Pe_L)).
+    # Адвективный член rho*cp*Vdot*(Tp-T0) УЖЕ стоит в знаменателе — это ровно
+    # энтальпия, возвращаемая подогретой подачей. Остаток — утечка в патрон:
+    #     S_rod = rho*cp*Vdot / (exp(Pe_L) - 1),   Pe_L = v_f*L/alpha_r
+    # Малая тепловая досягаемость alpha_r/v_f (сталь ~3 мм) => патрон не виден,
+    # S_rod ~ 0, eta = 1. Большая (алюминий 50-220 мм) => сток реален.
+    rod_L = p.get("rod_L")            # вылет прутка [мм]; None/0 = не учитывать
+    def rodsink_at(T):
+        if not rod_L or rod_L <= 0 or feedvol is None or not p.get("use_feed"):
+            return 0.0
+        k_r = interp_prop(kt_dep, p.get("k_dep", k), T) if use_tdep else p.get("k_dep", k)
+        cp_d = interp_prop(cpt_dep, cp_dep0, T) if use_tdep else cp_dep0
+        alpha_r = k_r / (rho_dep * cp_d)                    # м²/с
+        v_f = feedvol / (math.pi * R**2) if v_z == 0.0 else v_z
+        PeL = np.clip(v_f * (rod_L * 1e-3) / alpha_r, 1e-9, 700.0)
+        return rho_dep * cp_d * feedvol / np.expm1(PeL)
+
     # --- общие функции модели (T-зависимые свойства пересчитываются на каждом шаге) ---
     def sink_at(T):
         k_c = interp_prop(kt_sub, k, T) if use_tdep else k
@@ -1024,6 +1055,7 @@ def solve_Tpeak(omega_rpm, R_mm, H_mm, p, audit=False):
         s = 4.0 * k_c * R + 4.0 * k2 * R * f_shoe
         if p.get("use_feed") and feedvol is not None:
             s = s + rho_dep * cp_d * feedvol
+        s = s + rodsink_at(T)
         return s
 
     def tauy_at(T):
@@ -1083,12 +1115,46 @@ def solve_Tpeak(omega_rpm, R_mm, H_mm, p, audit=False):
         s_cond = 4.0 * k_c * float(R)
         s_shoe = 4.0 * k2 * float(R) * float(f_shoe)
         s_adv = (rho_dep * cp_d * float(feedvol)) if (p.get("use_feed") and feedvol is not None) else 0.0
+        # --- диагностика стока в пруток: НИКОГДА не должна ронять расчёт точки ---
+        s_rod = 0.0; reach_mm = float("inf"); PeL_a = float("inf")
+        sigma_a = 0.0; PeD_a = float("nan")
+        try:
+            s_rod = float(np.asarray(rodsink_at(T)).reshape(-1)[0])
+            k_r_raw = p.get("k_dep")
+            if k_r_raw is None:
+                k_r_raw = k
+            k_r_a = float(interp_prop(kt_dep, k_r_raw, T)) if use_tdep else float(k_r_raw)
+            alpha_a = k_r_a / (rho_dep * cp_d)
+            if v_z and v_z > 0.0:
+                v_f_a = float(v_z)
+            elif feedvol is not None and float(R) > 0.0:
+                v_f_a = float(feedvol) / (math.pi * float(R) ** 2)
+            else:
+                v_f_a = 0.0
+            if v_f_a > 0.0 and alpha_a > 0.0:
+                reach_mm = alpha_a / v_f_a * 1e3
+                # безразмерные группы, управляющие η:
+                #   Pe_L = v_f*L/alpha_r  — виден ли патрон из контакта
+                #   sigma = S_adv/(S_sub+S_sh+S_adv) — доля адвекции в сети стоков
+                #   Pe_D = rho*cp*v_f*D/k_sub — подача против кондукции (круглый пруток)
+                if rod_L:
+                    PeL_a = v_f_a * (float(rod_L) * 1e-3) / alpha_a
+                if k_c and float(k_c) > 0.0:
+                    PeD_a = rho_dep * cp_d * v_f_a * (2.0 * float(R)) / float(k_c)
+            s_net = s_cond + s_shoe + s_adv
+            sigma_a = (s_adv / s_net) if s_net > 0 else 0.0
+        except Exception as exc:                      # диагностика не критична
+            print("[AFSD audit] rod-sink diagnostics skipped:", exc)
+        s_tot = s_cond + s_shoe + s_adv + s_rod
         return T, dict(branch=("sliding" if bool(sliding) else "sticking"),
+                       Pe_L=PeL_a, sigma_adv=sigma_a, Pe_D=PeD_a,
                        Tstar=float(Tstar), Tslide=float(Tslide),
                        tau_c=tau_c / 1e6, tau_y=tau_y / 1e6, mu_eff=muT,
                        p_contact=float(p_contact) / 1e6,
-                       Q=float(Q_of_tau(tau_c)), sink=s_cond + s_shoe + s_adv,
+                       Q=float(Q_of_tau(tau_c)), sink=s_tot,
                        sink_cond=s_cond, sink_shoe=s_shoe, sink_adv=s_adv,
+                       sink_rod=s_rod, rod_reach_mm=reach_mm,
+                       eta_rod=(s_tot - s_rod) / s_tot if s_tot > 0 else 1.0,
                        Pe=float(np.asarray(Pe_val).reshape(-1)[0]), G=float(np.asarray(Gf).reshape(-1)[0]),
                        solidus_flag=bool(np.any(solidus_flag)), T_sol=float(Tsol))
     return float(res) if res.ndim == 0 else res
@@ -1174,6 +1240,7 @@ class App(tk.Tk):
             self._fields[key] = tk.StringVar(value=str(pr[key]))
         self._fields["C_emp"] = tk.StringVar(value="" if pr["C_emp"] is None else str(pr["C_emp"]))
         self._fields["eta"] = tk.StringVar(value="1.0")
+        self._fields["rod_L"] = tk.StringVar(value="0")    # вылет прутка [мм]; 0 = сток в патрон выключен
         self._fields["F"] = tk.StringVar(value="8.0")      # осевая сила [кН]
         self._fields["mu"] = tk.StringVar(value="0.5")     # коэф. трения контактной пары
         # режим каждого параметра: "range" (диапазон, в матрицу/оси) или "fixed" (одно число).
@@ -1361,7 +1428,12 @@ class App(tk.Tk):
         self._bind_hotkeys()
 
     def _bind_hotkeys(self):
-        """Стандартные горячие клавиши (на каждый метод)."""
+        """Стандартные горячие клавиши (на каждый метод).
+
+        Привязка делается и к корню (bind_all), и к самому окну: matplotlib-канва
+        и поля ввода могут перехватывать клавиши, и тогда bind_all в одиночку
+        срабатывает не всегда. Каждый вызов защищён: исключение в обработчике
+        не должно молча гасить остальные горячие клавиши."""
         binds = {
             "<F1>": self.show_guide,
             "<Control-n>": self.new_project, "<Control-N>": self.new_project,
@@ -1373,8 +1445,18 @@ class App(tk.Tk):
             "<Control-Shift-g>": self.save_svg, "<Control-Shift-G>": self.save_svg,
             "<Control-Shift-e>": self.export_csv, "<Control-Shift-E>": self.export_csv,
         }
+        def _wrap(f):
+            def _h(event=None, _f=f):
+                try:
+                    _f()
+                except Exception as exc:                 # не гасим остальные клавиши
+                    print("[AFSD hotkey] %s failed: %r" % (getattr(_f, "__name__", _f), exc))
+                return "break"
+            return _h
         for seq, fn in binds.items():
-            self.bind_all(seq, lambda e, f=fn: (f(), "break")[1])
+            h = _wrap(fn)
+            self.bind_all(seq, h)
+            self.bind(seq, h)                            # дубль на само окно
 
     # ---------- body ----------
     def _section(self, parent, title, key):
@@ -1503,8 +1585,7 @@ class App(tk.Tk):
             Tsol = self._f("T_solidus")
         except ValueError:
             return
-        _lo, _hi = self._wfracs()
-        Tmin, Tmax = _lo * Tsol, _hi * Tsol
+        Tmin, Tmax = self._window_C(Tsol)
         annot = "\n".join(self._plot_annot(s, v) for s, v in fixed.items())
         self.fig.clf()
         if self.view_var.get() == "3D":
@@ -1587,7 +1668,7 @@ class App(tk.Tk):
         for tr, key in [("lbl_sigma", "sigma_ref"), ("lbl_tref", "T_ref"), ("lbl_m", "m"),
                         ("lbl_k", "k"), ("lbl_tsol", "T_solidus"), ("lbl_t0", "T0"),
                         ("lbl_c", "C_emp"), ("lbl_eta", "eta"), ("lbl_rho", "rho"),
-                        ("lbl_cp", "cp")]:
+                        ("lbl_cp", "cp"), ("lbl_rodl", "rod_L")]:
             self._labeled(g1, tr, key)
         # коэффициент трения μ: явный переключатель «константа / таблица μ(T)»
         rowmm = ttk.Frame(g1); rowmm.pack(fill="x", pady=(4, 0))
@@ -2173,7 +2254,17 @@ class App(tk.Tk):
             sub_mat = self.materials.get(self.substrate_var.get(), dep_mat)
         p["kt_sub"] = sub_mat.get("kt"); p["cpt_sub"] = sub_mat.get("cpt")
         p["cpt_dep"] = dep_mat.get("cpt"); p["kt_dep"] = dep_mat.get("kt")
+        # теплопроводность ПРУТКА (для стока в патрон): из карточки материала
+        # присадки; при sub_same она совпадает с k подложки
+        p["k_dep"] = dep_mat.get("k", p["k"]) if not self.sub_same_var.get() else p["k"]
         p["use_tdep"] = bool(self.tdep_var.get())
+        # вылет прутка L [мм] — включает сток в патрон S_rod (0/пусто = выключено)
+        try:
+            rl_raw = self._fields["rod_L"].get().strip().replace(",", ".") \
+                     if "rod_L" in self._fields else ""
+            p["rod_L"] = float(rl_raw) if rl_raw else 0.0
+        except (ValueError, KeyError):
+            p["rod_L"] = 0.0
         # шайба (отвод тепла вверх) — только в режиме shouldered
         if self.input_mode == "shoulder" and self.shoe_var.get() != SHOE_NONE:
             try:
@@ -2230,6 +2321,18 @@ class App(tk.Tk):
         if hi <= lo:                       # защита от инверсии
             lo, hi = 0.6, 0.9
         return lo, hi
+
+    def _window_C(self, T_sol_C):
+        """Границы технологического окна в °C.
+
+        Гомологическая температура определена на АБСОЛЮТНОЙ шкале:
+            T_lo = lo·T_s,  T_hi = hi·T_s,   T_s в кельвинах,
+        а результат переводится обратно в °C. Прямое умножение долей на
+        температуру солидуса в °C дало бы другое окно (для AA6082: 351–526 °C
+        вместо 242–499 °C) и не было бы гомологическим критерием."""
+        lo, hi = self._wfracs()
+        Ts_K = c_to_k(float(T_sol_C))
+        return lo * Ts_K - 273.15, hi * Ts_K - 273.15
 
     def _plot_label(self, name):
         n, sym, u = self.JLAB[name]
@@ -2756,11 +2859,15 @@ class App(tk.Tk):
             return
         omega, R, H, pe = self._resolve(p, vals, point=True)
         T, aud = compute_T_audit(omega, R, H, pe)       # T_peak + аудит решателя
-        _lo, _hi = self._wfracs()
-        Tmin, Tmax = _lo * p["T_solidus"], _hi * p["T_solidus"]
+        Tmin, Tmax = self._window_C(p["T_solidus"])
         status = (self.t("st_in") if Tmin <= T <= Tmax else
                   (self.t("st_below") if T < Tmin else self.t("st_above")))
         extra = ""
+        # сток в патрон показываем ПЕРВЫМ: строка результата длинная и хвост
+        # уезжает за правый край поля, а η_экв — самое важное при L > 0
+        if aud.get("sink_rod", 0.0) > 0.0:
+            extra += (f"   η_экв={aud['eta_rod']:.2f} (L={self._fields['rod_L'].get()} мм,"
+                      f" S_rod={aud['sink_rod']:.3f} Вт/К, Pe_L={aud['Pe_L']:.2f})")
         if self.input_mode == "kin":
             wb_used = self._f("w_bead") if self.beadw_on_var.get() else 2.0 * R
             extra += f"   H={H:.2f} мм   w={wb_used:.2f} мм"
@@ -2772,13 +2879,19 @@ class App(tk.Tk):
                   f" ({regime}, T*={aud['Tstar']:.0f}°C)")
         if aud["solidus_flag"]:
             extra += "   ⚠ " + self.t("flag_solidus")
+        if aud.get("sink_rod", 0.0) > 0.0:
+            extra += (f"   α/v_f={aud['rod_reach_mm']:.0f} мм,"
+                      f" σ={aud['sigma_adv']:.2f}, Pe_D={aud['Pe_D']:.1f}")
         # аудит решателя в консоль (физика проверяема: ветвь, T*, τ, Q, стоки, Pe, G)
         print("[AFSD audit] branch=%s  T_peak=%.1f°C  T*=%.1f  T_slide=%.1f  "
               "τc=%.1f τy=%.1f MPa  p=%.1f MPa  μ=%.3f  Q=%.1f W  "
-              "sink=%.4f (cond=%.4f shoe=%.4f adv=%.4f) W/K  Pe=%.2f G=%.3f  solidus_flag=%s"
+              "sink=%.4f (cond=%.4f shoe=%.4f adv=%.4f rod=%.4f) W/K  "
+              "α/v_f=%.1f mm  η_экв=%.3f  Pe=%.2f G=%.3f  solidus_flag=%s"
               % (aud["branch"], T, aud["Tstar"], aud["Tslide"], aud["tau_c"], aud["tau_y"],
                  aud["p_contact"], aud["mu_eff"], aud["Q"], aud["sink"], aud["sink_cond"],
-                 aud["sink_shoe"], aud["sink_adv"], aud["Pe"], aud["G"], aud["solidus_flag"]))
+                 aud["sink_shoe"], aud["sink_adv"], aud.get("sink_rod", 0.0),
+                 aud.get("rod_reach_mm", float("nan")), aud.get("eta_rod", 1.0),
+                 aud["Pe"], aud["G"], aud["solidus_flag"]))
         self.result_var.set(f"T_peak = {T:.1f} °C  ({c_to_k(T):.1f} K)   "
                             f"[{self.t('res_window')} {Tmin:.0f}…{Tmax:.0f} °C]  {status}{extra}")
         # накапливаем точки: новая не убирает прежние, ей даётся следующая буква.
@@ -3023,8 +3136,7 @@ class App(tk.Tk):
         except Exception:
             pass
 
-        _lo, _hi = self._wfracs()
-        Tmin, Tmax = _lo * p["T_solidus"], _hi * p["T_solidus"]
+        Tmin, Tmax = self._window_C(p["T_solidus"])
         self.fig.clf()
         # журнальная аннотация (в поле графика, как в примере «Tool Radius R=5mm»)
         annot = "\n".join(self._plot_annot(s, v) for s, v in fixed.items())
@@ -3069,12 +3181,17 @@ class App(tk.Tk):
             mask = np.where((T >= Tmin) & (T <= Tmax), 1.0, np.nan)
             ax.contourf(X, Y, mask, levels=[0.5, 1.5], colors=["#19d219"], alpha=0.30)
         _lo, _hi = self._wfracs()
-        for lev, col, tag in [(Tmin, "#1565ff", r"$%g\,T_{s}$" % _lo),
-                              (Tmax, "#e8112d", r"$%g\,T_{s}$" % _hi)]:
+        # Гомологическая температура T/T_s — отношение АБСОЛЮТНЫХ температур,
+        # поэтому безразмерна и вопроса о единицах не возникает. В скобках —
+        # соответствующее значение в °C, чтобы границу можно было читать прямо
+        # с карты (шкала и изолинии тоже в °C).
+        for lev, col, tag in [(Tmin, "#1565ff", r"$T/T_{s} = %g$" % _lo),
+                              (Tmax, "#e8112d", r"$T/T_{s} = %g$" % _hi)]:
             try:
                 c = ax.contour(X, Y, T, levels=[lev], colors=col, linewidths=2.0,
                                linestyles="--")
-                for t in ax.clabel(c, fmt={lev: f"{tag} = {lev:.0f}"}, fontsize=max(6, fs - 1),
+                for t in ax.clabel(c, fmt={lev: f"{tag} ({lev:.0f})"},
+                                   fontsize=max(6, fs - 1),
                                    colors="k"):
                     t.set_fontname(TNR); t.set_path_effects(stroke)
             except Exception:
