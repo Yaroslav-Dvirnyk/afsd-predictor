@@ -208,7 +208,12 @@ class MainWindow(QMainWindow):
         self.view = "2D"
         self._project_path = None
         self._last_grid = None
+        self._points = []             # нанесённые точки: [{label, vals, T}]
         self._building = False        # защита от рекурсии при обновлении полей
+        # реестры для смены языка на лету: (виджет, ключ перевода, запасной текст)
+        self._titled_cards = []
+        self._texted = []
+        self._labeled_fields = []
 
         self.setWindowTitle(core.APP_NAME)
         self.resize(1560, 960)
@@ -348,7 +353,7 @@ class MainWindow(QMainWindow):
         lay.setSpacing(SP_L)
 
         # --- процесс ---
-        c_proc = Card(self.t("grp_proc", "Процесс"))
+        c_proc = self._card("grp_proc", "Процесс")
         self.rb_kin = QRadioButton(self.t("mode_kin", "Shoulderless (пруток)"))
         self.rb_shoulder = QRadioButton(self.t("mode_shoulder", "Shouldered / MELD"))
         self.rb_kin.setChecked(True)
@@ -360,13 +365,13 @@ class MainWindow(QMainWindow):
         lay.addWidget(c_proc)
 
         # --- параметры режима ---
-        c_par = Card(self.t("grp_params", "Параметры режима"))
+        c_par = self._card("grp_params", "Параметры режима")
         hdr = QHBoxLayout()
         hdr.setSpacing(SP_S)
-        for text, w in [("", 58), (self.t("hdr_min", "мин"), 66),
-                        ("", 12), (self.t("hdr_max", "макс"), 66),
-                        (self.t("hdr_point", "точка"), 66)]:
-            l = QLabel(text)
+        for key, fb, w in [(None, "", 58), ("hdr_min", "мин", 66),
+                           (None, "", 12), ("hdr_max", "макс", 66),
+                           ("hdr_point", "точка", 66)]:
+            l = self._lbl(key, fb, hint=True) if key else QLabel("")
             l.setObjectName("Hint")
             l.setFixedWidth(w)
             l.setAlignment(Qt.AlignCenter)
@@ -385,7 +390,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(c_par)
 
         # --- оси ---
-        c_ax = Card(self.t("grp_axes", "Оси карты"))
+        c_ax = self._card("grp_axes", "Оси карты")
         gl = QGridLayout()
         gl.setSpacing(SP_M)
         gl.addWidget(QLabel("X"), 0, 0)
@@ -405,24 +410,29 @@ class MainWindow(QMainWindow):
         lay.addWidget(c_ax)
 
         # --- дополнительно ---
-        c_ex = Card(self.t("grp_extra", "Дополнительно"))
-        self.chk_feed = QCheckBox(self.t("chk_feedsink", "Сток подачи ρcₚ·V̇"))
-        self.chk_pe = QCheckBox(self.t("chk_pe", "Скоростная поправка G(Pe)"))
-        self.chk_tdep = QCheckBox(self.t("chk_tdep", "k, cₚ зависят от T"))
-        self.chk_bore = QCheckBox(self.t("chk_bore", "Кольцевой контакт плеча"))
+        c_ex = self._card("grp_extra", "Дополнительно")
+        self.chk_feed = self._chk("chk_feedsink", "Сток подачи ρcₚ·V̇")
+        self.chk_pe = self._chk("chk_pe", "Скоростная поправка G(Pe)")
+        self.chk_tdep = self._chk("chk_tdep", "k, cₚ зависят от T")
+        self.chk_bore = self._chk("chk_bore", "Кольцевой контакт плеча")
         for c, attr in [(self.chk_feed, "use_feedsink"), (self.chk_pe, "use_pe"),
                         (self.chk_tdep, "use_tdep"), (self.chk_bore, "bore")]:
             c.toggled.connect(lambda on, a=attr: self._set_flag(a, on))
             c_ex.body.addWidget(c)
-        self.f_rodL = Field(self.t("lbl_rodl", "L, вылет прутка"), 0, "мм")
+        self.f_rodL = self._field("lbl_rodl", "L, вылет прутка", 0, "мм")
         self.f_rodL.edit.editingFinished.connect(self._on_edit)
         c_ex.body.addWidget(self.f_rodL)
         lay.addWidget(c_ex)
 
-        btn = QPushButton(self.t("btn_point", "Рассчитать точку"))
-        btn.setObjectName("Accent")
+        row = QHBoxLayout()
+        row.setSpacing(SP_M)
+        btn = self._btn("btn_point", "Рассчитать точку", accent=True)
         btn.clicked.connect(self.calc_point)
-        lay.addWidget(btn)
+        row.addWidget(btn, 1)
+        b_clr = self._btn("btn_clearpts", "Очистить точки")
+        b_clr.clicked.connect(self.clear_points)
+        row.addWidget(b_clr, 0)
+        lay.addLayout(row)
         lay.addStretch(1)
         return host
 
@@ -433,7 +443,7 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(SP_M, SP_M, SP_M, SP_M)
         lay.setSpacing(SP_L)
 
-        c_dep = Card(self.t("grp_dep", "Пруток (присадка)"))
+        c_dep = self._card("grp_dep", "Пруток (присадка)")
         self.cb_material = QComboBox()
         self.cb_material.addItems(sorted(self.st.materials.keys()))
         self.cb_material.setCurrentText(self.st.preset)
@@ -453,8 +463,8 @@ class MainWindow(QMainWindow):
             c_dep.body.addWidget(f)
         lay.addWidget(c_dep)
 
-        c_sub = Card(self.t("grp_sub", "Подложка"))
-        self.chk_subsame = QCheckBox(self.t("chk_subsame", "= материал прутка"))
+        c_sub = self._card("grp_sub", "Подложка")
+        self.chk_subsame = self._chk("chk_subsame", "= материал прутка")
         self.chk_subsame.setChecked(True)
         self.chk_subsame.toggled.connect(self._on_subsame)
         c_sub.body.addWidget(self.chk_subsame)
@@ -472,11 +482,11 @@ class MainWindow(QMainWindow):
             c_sub.body.addWidget(f)
         lay.addWidget(c_sub)
 
-        c_fr = Card(self.t("grp_friction", "Контакт"))
+        c_fr = self._card("grp_friction", "Контакт")
         self.f_mu = Field("μ", self.st.fields.get("mu", "0.5"), "")
         self.f_mu.edit.editingFinished.connect(self._on_edit)
         c_fr.body.addWidget(self.f_mu)
-        self.chk_mutdep = QCheckBox(self.t("chk_mutdep", "μ зависит от T (таблица пары)"))
+        self.chk_mutdep = self._chk("chk_mutdep", "μ зависит от T (таблица пары)")
         self.chk_mutdep.toggled.connect(self._on_mutdep)
         c_fr.body.addWidget(self.chk_mutdep)
         self.cb_mupair = QComboBox()
@@ -484,8 +494,8 @@ class MainWindow(QMainWindow):
         self.cb_mupair.setEnabled(False)
         self.cb_mupair.currentTextChanged.connect(self._on_mupair)
         c_fr.body.addWidget(self.cb_mupair)
-        self.f_kshoe = Field(self.t("lbl_kshoe", "k плеча"),
-                             self.st.fields.get("k_shoe", "25"), "Вт/(м·К)")
+        self.f_kshoe = self._field("lbl_kshoe", "k плеча",
+                                   self.st.fields.get("k_shoe", "25"), "Вт/(м·К)")
         self.f_kshoe.edit.editingFinished.connect(self._on_edit)
         c_fr.body.addWidget(self.f_kshoe)
         lay.addWidget(c_fr)
@@ -499,7 +509,7 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(SP_M, SP_M, SP_M, SP_M)
         lay.setSpacing(SP_L)
 
-        c_view = Card(self.t("grp_view", "Вид"))
+        c_view = self._card("grp_view", "Вид")
         row = QHBoxLayout()
         self.rb_2d = QRadioButton("2D"); self.rb_3d = QRadioButton("3D")
         self.rb_2d.setChecked(True)
@@ -507,12 +517,12 @@ class MainWindow(QMainWindow):
         self.rb_2d.toggled.connect(self._on_view_change)
         row.addWidget(self.rb_2d); row.addWidget(self.rb_3d); row.addStretch(1)
         c_view.body.addLayout(row)
-        self.chk_winfill = QCheckBox(self.t("chk_winfill", "Подсветить окно"))
+        self.chk_winfill = self._chk("chk_winfill", "Подсветить окно")
         self.chk_winfill.toggled.connect(lambda _v: self.rebuild())
         c_view.body.addWidget(self.chk_winfill)
         lay.addWidget(c_view)
 
-        c_win = Card(self.t("grp_window", "Технологическое окно"))
+        c_win = self._card("grp_window", "Технологическое окно")
         self.sp_wlo = QDoubleSpinBox(); self.sp_whi = QDoubleSpinBox()
         for sp, val in ((self.sp_wlo, 0.6), (self.sp_whi, 0.9)):
             sp.setRange(0.05, 1.5); sp.setSingleStep(0.05); sp.setDecimals(2)
@@ -524,36 +534,36 @@ class MainWindow(QMainWindow):
         c_win.body.addLayout(r)
         lay.addWidget(c_win)
 
-        c_txt = Card(self.t("grp_text", "Текст и сетка"))
+        c_txt = self._card("grp_text", "Текст и сетка")
         self.sp_fs = QSpinBox(); self.sp_fs.setRange(6, 28); self.sp_fs.setValue(13)
         self.sp_fs.valueChanged.connect(lambda _v: self.redraw())
-        r = QHBoxLayout(); r.addWidget(QLabel(self.t("lbl_fs", "Размер текста")))
+        r = QHBoxLayout(); r.addWidget(self._lbl("lbl_fs", "Размер текста"))
         r.addWidget(self.sp_fs); r.addStretch(1)
         c_txt.body.addLayout(r)
 
         self.sp_lev = QSpinBox(); self.sp_lev.setRange(6, 60); self.sp_lev.setValue(24)
         self.sp_lev.valueChanged.connect(lambda _v: self.redraw())
-        r = QHBoxLayout(); r.addWidget(QLabel(self.t("lbl_levels", "Градаций цвета")))
+        r = QHBoxLayout(); r.addWidget(self._lbl("lbl_levels", "Градаций цвета"))
         r.addWidget(self.sp_lev); r.addStretch(1)
         c_txt.body.addLayout(r)
 
         self.sp_n3d = QSpinBox(); self.sp_n3d.setRange(16, 160); self.sp_n3d.setValue(48)
         self.sp_n3d.valueChanged.connect(lambda _v: self.rebuild())
-        r = QHBoxLayout(); r.addWidget(QLabel(self.t("lbl_n3d", "Сетка 3D")))
+        r = QHBoxLayout(); r.addWidget(self._lbl("lbl_n3d", "Сетка 3D"))
         r.addWidget(self.sp_n3d); r.addStretch(1)
         c_txt.body.addLayout(r)
         lay.addWidget(c_txt)
 
-        c_3d = Card(self.t("grp_3d", "Ракурс 3D"))
+        c_3d = self._card("grp_3d", "Ракурс 3D")
         self.sl_elev = QSlider(Qt.Horizontal); self.sl_elev.setRange(-90, 90)
         self.sl_elev.setValue(28)
         self.sl_azim = QSlider(Qt.Horizontal); self.sl_azim.setRange(-180, 180)
         self.sl_azim.setValue(-130)
         for s in (self.sl_elev, self.sl_azim):
             s.valueChanged.connect(self._on_view_angle)
-        r = QHBoxLayout(); r.addWidget(QLabel(self.t("lbl_elev", "Подъём")))
+        r = QHBoxLayout(); r.addWidget(self._lbl("lbl_elev", "Подъём"))
         r.addWidget(self.sl_elev, 1); c_3d.body.addLayout(r)
-        r = QHBoxLayout(); r.addWidget(QLabel(self.t("lbl_azim", "Азимут")))
+        r = QHBoxLayout(); r.addWidget(self._lbl("lbl_azim", "Азимут"))
         r.addWidget(self.sl_azim, 1); c_3d.body.addLayout(r)
         lay.addWidget(c_3d)
         lay.addStretch(1)
@@ -572,16 +582,16 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setVisible(False)
         lay.addWidget(self.table, 1)
 
-        c_reg = Card(self.t("reg_eq_title", "Регрессия T_peak"))
+        c_reg = self._card("reg_eq_title", "Регрессия T_peak")
         self.txt_reg = QTextEdit()
         self.txt_reg.setReadOnly(True)
         self.txt_reg.setMaximumHeight(96)
         c_reg.body.addWidget(self.txt_reg)
         r = QHBoxLayout()
-        b = QPushButton(self.t("btn_copyreg_full", "Копировать LaTeX"))
+        b = self._btn("btn_copyreg_full", "Копировать LaTeX")
         b.clicked.connect(self.copy_latex)
         r.addWidget(b)
-        b = QPushButton(self.t("mat_export", "Экспорт CSV"))
+        b = self._btn("mat_export", "Экспорт CSV")
         b.clicked.connect(self.export_matrix_csv)
         r.addWidget(b); r.addStretch(1)
         c_reg.body.addLayout(r)
@@ -603,6 +613,37 @@ class MainWindow(QMainWindow):
         card.body.addWidget(self.lbl_result)
         card.body.addWidget(self.lbl_hint)
         return card
+
+    # ---------- создание переводимых виджетов ----------
+    def _card(self, key, fallback):
+        """Карточка, заголовок которой обновится при смене языка."""
+        c = Card(self.t(key, fallback))
+        self._titled_cards.append((c, key, fallback))
+        return c
+
+    def _chk(self, key, fallback):
+        c = QCheckBox(self.t(key, fallback))
+        self._texted.append((c, key, fallback))
+        return c
+
+    def _btn(self, key, fallback, accent=False):
+        b = QPushButton(self.t(key, fallback))
+        if accent:
+            b.setObjectName("Accent")
+        self._texted.append((b, key, fallback))
+        return b
+
+    def _lbl(self, key, fallback, hint=False):
+        l = QLabel(self.t(key, fallback))
+        if hint:
+            l.setObjectName("Hint")
+        self._texted.append((l, key, fallback))
+        return l
+
+    def _field(self, key, fallback, value="", unit=""):
+        f = Field(self.t(key, fallback), value, unit)
+        self._labeled_fields.append((f, key, fallback))
+        return f
 
     # ---------- единицы ----------
     def _unit(self, sym):
@@ -812,7 +853,39 @@ class MainWindow(QMainWindow):
 
     def set_language(self, code):
         self.lang = code
-        self.statusBar().showMessage(self.t("menu_lang", "Язык") + ": " + code, 2500)
+        self.retranslate()
+
+    def retranslate(self):
+        """Перевести надписи на месте.
+
+        Меню пересобирается целиком (у QAction нет обратной связи с ключом),
+        остальное правится по ссылкам на виджеты — так не теряются введённые
+        значения и текущая вкладка."""
+        self.menuBar().clear()
+        self._build_menu()
+
+        self.left_tabs.setTabText(0, self.t("tab_process", "Режим"))
+        self.left_tabs.setTabText(1, self.t("tab_material", "Материал"))
+        self.left_tabs.setTabText(2, self.t("tab_style", "Оформление"))
+        self.tabs.setTabText(0, self.t("tab_map", "Карта"))
+        self.tabs.setTabText(1, self.t("tab_matrix", "План эксперимента"))
+
+        for card, key, fb in self._titled_cards:
+            card.set_title(self.t(key, fb))
+        for w, key, fb in self._texted:
+            w.setText(self.t(key, fb))
+        for f, key, fb in self._labeled_fields:
+            f.set_label(self.t(key, fb))
+
+        self.rb_kin.setText(self.t("mode_kin", "Shoulderless (пруток)"))
+        self.rb_shoulder.setText(self.t("mode_shoulder", "Shouldered / MELD"))
+        self._update_title()
+        for sym, row in self.rows.items():
+            row.lbl_unit.setText(self._unit(sym))
+        self._refresh_axes()
+        self._refresh_matrix()
+        self.redraw()
+        self.statusBar().showMessage(self.t("menu_lang", "Язык") + ": " + self.lang, 2000)
 
     # ---------- расчёт и отрисовка ----------
     def rebuild(self):
@@ -879,6 +952,7 @@ class MainWindow(QMainWindow):
         ax.set_xlabel(self._axis_label(xN), fontsize=fs)
         ax.set_ylabel(self._axis_label(yN), fontsize=fs)
         ax.tick_params(labelsize=max(6, fs - 2))
+        self._draw_points(ax, xN, yN, fs)
         self.plot.fig.tight_layout()
 
     def _draw_3d(self, X, Y, T, xN, yN, Tmin, Tmax, fs):
@@ -924,6 +998,49 @@ class MainWindow(QMainWindow):
         if aud.get("solidus_flag"):
             extra += "   ⚠ " + self.t("flag_solidus", "выше солидуса")
         self.lbl_hint.setText(extra)
+
+        # накапливаем точки: новая не убирает прежние, ей даётся следующая буква.
+        # повтор того же набора параметров не плодит дубликат.
+        newvals = {k: float(v) for k, v in vals.items()}
+        if self._points and self._points[-1]["vals"] == newvals:
+            self._points[-1]["T"] = float(T)
+        else:
+            self._points.append({"label": self._next_label(),
+                                 "vals": newvals, "T": float(T)})
+        self.redraw()
+
+    def _next_label(self):
+        """Следующая свободная буква: A, B, … Z, AA, AB, …"""
+        used = {p["label"] for p in self._points}
+        letters = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
+        for c in letters + [a + b for a in letters for b in letters]:
+            if c not in used:
+                return c
+        return "P%d" % (len(self._points) + 1)
+
+    def clear_points(self):
+        self._points = []
+        self.redraw()
+
+    def _draw_points(self, ax, xN, yN, fs):
+        """Отметить на карте рассчитанные точки — только те, что попадают в оси."""
+        for p in self._points:
+            vals = p["vals"]
+            if xN not in vals or yN not in vals:
+                continue
+            ax.plot(vals[xN], vals[yN], "o", ms=8, mfc="white", mec="black",
+                    mew=1.4, zorder=40)
+            # у правого края подпись уходила бы за поле графика — отражаем её влево
+            x0, x1 = ax.get_xlim()
+            near_right = (vals[xN] - x0) > 0.82 * (x1 - x0)
+            ax.annotate("%s  %.0f°C" % (p["label"], p["T"]),
+                        (vals[xN], vals[yN]), textcoords="offset pixels",
+                        xytext=(-12, 0) if near_right else (12, 0),
+                        ha="right" if near_right else "left", va="center",
+                        fontsize=max(7, fs - 2), fontweight="bold",
+                        color="black", zorder=41,
+                        bbox=dict(boxstyle="round,pad=0.25", fc="white",
+                                  ec="0.4", alpha=0.95))
 
     def _refresh_matrix(self):
         """Таблица плана 3^N и уравнение регрессии."""
