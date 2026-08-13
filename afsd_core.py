@@ -181,6 +181,21 @@ PROP_TABLES = {
 }
 
 
+def debug_print(*args):
+    """Печать отладки, безопасная в оконной сборке.
+
+    В exe, собранном с console=False, sys.stdout и sys.stderr равны None,
+    и обычный print бросает исключение. Диагностика не должна ронять
+    расчёт, а кодировка консоли (cp1251) не должна ронять юникод.
+    """
+    if not sys.stdout:
+        return
+    try:
+        print(*args)
+    except (UnicodeEncodeError, ValueError, OSError, AttributeError):
+        pass
+
+
 def interp_prop(table, const, T):
     """Линейная интерполяция свойства по таблице [[T,val],...]; вне диапазона —
        крайнее значение. Если таблицы нет — возвращает const. T скаляр/массив."""
@@ -1206,7 +1221,7 @@ def solve_Tpeak(omega_rpm, R_mm, H_mm, p, audit=False):
             s_net = s_cond + s_shoe + s_adv
             sigma_a = (s_adv / s_net) if s_net > 0 else 0.0
         except Exception as exc:                      # диагностика не критична
-            print("[AFSD audit] rod-sink diagnostics skipped:", exc)
+            debug_print("[AFSD audit] rod-sink diagnostics skipped:", exc)
         s_tot = s_cond + s_shoe + s_adv + s_rod
         return T, dict(branch=("sliding" if bool(sliding) else "sticking"),
                        Pe_L=PeL_a, sigma_adv=sigma_a, Pe_D=PeD_a,

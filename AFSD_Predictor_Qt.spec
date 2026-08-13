@@ -12,22 +12,15 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # Что не нужно в Qt-сборке (иначе exe вырастает втрое):
+    # Что не нужно в Qt-сборке (иначе exe вырастает вдвое):
     #   tkinter/PyQt* — вторая GUI-библиотека;
-    #   scipy — тянется через matplotlib, но программа его не вызывает;
-    #   Qt3D/Charts/WebEngine и прочее — модули Qt, которых нет в интерфейсе.
+    #   scipy/pandas — тянутся через matplotlib, но программа их не вызывает.
+    # Отдельные модули PySide6 здесь НЕ исключаются: Qt подгружает часть из
+    # них динамически (QtSvg нужен для иконок панели инструментов), и обрезка
+    # по именам давала exe, который запускался, но не показывал окно.
     excludes=[
         'tkinter', 'PyQt5', 'PyQt6', 'PySide2', 'scipy', 'pandas',
-        'IPython', 'jupyter', 'notebook', 'pytest', 'PIL.ImageQt',
-        'PySide6.Qt3DCore', 'PySide6.Qt3DRender', 'PySide6.Qt3DExtras',
-        'PySide6.QtCharts', 'PySide6.QtDataVisualization',
-        'PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets',
-        'PySide6.QtWebEngineQuick', 'PySide6.QtQuick', 'PySide6.QtQml',
-        'PySide6.QtQuick3D', 'PySide6.QtMultimedia', 'PySide6.QtBluetooth',
-        'PySide6.QtNetworkAuth', 'PySide6.QtPositioning', 'PySide6.QtSensors',
-        'PySide6.QtSerialPort', 'PySide6.QtSql', 'PySide6.QtTest',
-        'PySide6.QtDesigner', 'PySide6.QtHelp', 'PySide6.QtUiTools',
-        'PySide6.QtPdf', 'PySide6.QtPdfWidgets', 'PySide6.QtSpatialAudio',
+        'IPython', 'jupyter', 'notebook', 'pytest',
     ],
     noarchive=False,
     optimize=0,
@@ -37,9 +30,8 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='AFSD_Predictor_Qt',
     debug=False,
     bootloader_ignore_signals=False,
@@ -54,4 +46,17 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['app.ico'],
+)
+
+# Сборка папкой, а не одним файлом: однофайловый exe распаковывает ~80 МБ во
+# временный каталог при каждом запуске, что на этой машине блокируется и окно
+# не появляется. Папка стартует сразу и без распаковки.
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='AFSD_Predictor_Qt',
 )
