@@ -39,9 +39,21 @@ figure export (PNG / PDF / SVG).
 ## Installation
 
 ### Option A — Windows executable (no Python required)
-Download `AFSD_Predictor.exe` from the [Releases](../../releases) page and run it.
-The `user_materials.json` and `user_mu.json` databases are created next to the
-executable on first save.
+Download `AFSD_Predictor.exe` (Tk interface) from the [Releases](../../releases)
+page and run it. The `user_materials.json` and `user_mu.json` databases are
+created next to the executable on first save.
+
+To build the Qt interface yourself:
+
+```bash
+pip install pyinstaller -r requirements-qt.txt
+pyinstaller --noconfirm --clean AFSD_Predictor_Qt.spec
+```
+
+The result is a folder, `dist/AFSD_Predictor_Qt/`, launched through the
+executable inside it. It is deliberately not a single file: a one-file build
+has to unpack ~80 MB to a temporary directory on every start, which some
+security software stalls, leaving a process that never shows a window.
 
 ### Option B — run from source (any OS)
 
