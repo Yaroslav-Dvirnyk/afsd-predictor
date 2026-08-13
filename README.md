@@ -44,15 +44,27 @@ The `user_materials.json` and `user_mu.json` databases are created next to the
 executable on first save.
 
 ### Option B — run from source (any OS)
+
+Two interfaces ship with the program. They share one calculation core, so
+both produce identical numbers; pick whichever you prefer.
+
+**Qt interface** (`afsd_qt.py`) — light/dark themes, tabbed layout:
+
+```bash
+pip install -r requirements-qt.txt
+python afsd_qt.py
+```
+
+**Tk interface** (`afsd_predictor.py`) — the original window, no Qt needed.
 Requires Python 3.9+ with `tkinter` (bundled with the standard Windows/macOS
-installer) and the packages below:
+installer):
 
 ```bash
 pip install -r requirements.txt
 python afsd_predictor.py
 ```
 
-On Windows you can also double-click `AFSD_Predictor.bat`.
+On Windows you can double-click `AFSD_Predictor_Qt.bat` or `AFSD_Predictor.bat`.
 
 ## Quick start
 
@@ -87,12 +99,22 @@ deliberately absorbed into eta.
 
 | File | Description |
 |------|-------------|
-| `afsd_predictor.py` | The application (single-file Python program). |
-| `AFSD_Predictor.bat` | Windows launcher (runs the script). |
+| `afsd_core.py` | Calculation core: physics, material database, translations. Imports no GUI toolkit. |
+| `afsd_qt.py` | Qt interface (PySide6), light/dark themes. |
+| `afsd_theme.py` | Colour palette and stylesheet for the Qt interface. |
+| `afsd_predictor.py` | Tk interface (the original window). |
+| `AFSD_Predictor_Qt.bat` | Windows launcher for the Qt interface. |
+| `AFSD_Predictor.bat` | Windows launcher for the Tk interface. |
 | `user_materials.json` | Default material database (editable in-app). |
 | `user_mu.json` | Default mu(T) pair tables (editable in-app). |
-| `requirements.txt` | Python dependencies. |
+| `requirements.txt` | Dependencies for the Tk interface. |
+| `requirements-qt.txt` | Dependencies for the Qt interface. |
 | `LICENSE` | MIT license. |
+
+Both interfaces call the same `afsd_core.ModelState`, so a map, a design
+matrix or a point evaluation gives the same result in either window.
+PySide6 is used rather than PyQt because its LGPL licence is compatible
+with this project's MIT licence.
 | `CITATION.cff` | Citation metadata. |
 
 ## Citation

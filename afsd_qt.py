@@ -229,6 +229,7 @@ class MainWindow(QMainWindow):
         self.apply_theme(self.theme_name)
         self._state_to_widgets()
         QTimer.singleShot(60, self.rebuild)
+        QTimer.singleShot(200, self._mark_saved)
 
     # ---------- перевод ----------
     def t(self, key, fallback=None):
@@ -897,15 +898,17 @@ class MainWindow(QMainWindow):
             g = self.st.grid(n=n)
         except Exception as exc:
             self.statusBar().showMessage("%s: %s" % (self.t("err", "Ошибка"), exc), 4000)
-            return
+            g = None
         self._last_grid = g
         if g is None:
+            # Карте нужны две оси, но плану 3^N хватает и одного фактора —
+            # таблица и регрессия обновляются в любом случае.
             self.statusBar().showMessage(
                 self.t("need2range", "Для карты нужно ≥2 варьируемых параметра"), 4000)
             self.plot.fig.clf()
             self.plot.canvas.draw_idle()
-            return
-        self.redraw()
+        else:
+            self.redraw()
         self._refresh_matrix()
 
     def redraw(self):
@@ -1117,8 +1120,10 @@ class MainWindow(QMainWindow):
     def on_new(self):
         self.st = core.ModelState()
         self._project_path = None
+        self._points = []
         self._state_to_widgets()
         self.rebuild()
+        self._mark_saved()
         self._update_title()
 
     def on_open(self):
@@ -1137,6 +1142,7 @@ class MainWindow(QMainWindow):
         self._project_path = path
         self._state_to_widgets()
         self.rebuild()
+        self._mark_saved()
         self._update_title()
 
     def on_save(self):
@@ -1164,12 +1170,48 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.critical(self, self.t("err", "Ошибка"), str(exc))
             return False
+        self._mark_saved()
+        self._update_title()
         self.statusBar().showMessage("%s: %s" % (self.t("saved", "Сохранено"), path), 3000)
         return True
 
     def _update_title(self):
         name = os.path.basename(self._project_path) if self._project_path else ""
-        self.setWindowTitle("%s — %s" % (core.APP_NAME, name) if name else core.APP_NAME)
+        star = "" if self._is_saved() else " *"
+        base = "%s — %s" % (core.APP_NAME, name) if name else core.APP_NAME
+        self.setWindowTitle(base + star)
+
+    def _mark_saved(self):
+        """Запомнить текущее состояние как сохранённое."""
+        self._widgets_to_state()
+        self._saved_snapshot = json.dumps(self.st.to_dict(), sort_keys=True)
+
+    def _is_saved(self):
+        snap = getattr(self, "_saved_snapshot", None)
+        if snap is None:
+            return True
+        try:
+            self._widgets_to_state()
+            return json.dumps(self.st.to_dict(), sort_keys=True) == snap
+        except Exception:
+            return True
+
+    def closeEvent(self, event):
+        """Не терять несохранённую работу молча."""
+        if self._is_saved():
+            event.accept()
+            return
+        r = QMessageBox.question(
+            self, core.APP_NAME,
+            self.t("ask_save", "Проект изменён. Сохранить перед выходом?"),
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+        if r == QMessageBox.Cancel:
+            event.ignore()
+        elif r == QMessageBox.Save:
+            self.on_save()
+            event.accept() if self._is_saved() else event.ignore()
+        else:
+            event.accept()
 
     # ---------- экспорт ----------
     def save_figure(self, ext):

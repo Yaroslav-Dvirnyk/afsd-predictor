@@ -6,6 +6,9 @@ __pycache__/
 build/
 dist/
 *.spec
+# ...кроме сборочных описаний самой программы — они нужны для воспроизводимой сборки
+!AFSD_Predictor.spec
+!AFSD_Predictor_Qt.spec
 
 # Author-private research material (NOT part of the program)
 *.pdf
