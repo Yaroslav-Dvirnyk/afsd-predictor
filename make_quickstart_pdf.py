@@ -82,6 +82,12 @@ TXT = {
             ("η_eq, S_rod", "Shown when the rod heat sink is on (L > 0)."),
             ("[geometry] H, w", "Layer height and bead width — outputs, not inputs."),
         ],
+        "col_action": "Action",
+        "col_note": "Note",
+        "flow_note": "A map needs at least two varying parameters. With one, the map\ncannot be drawn, but the design matrix and the regression still apply.",
+        "panel_name": "Point evaluation",
+        "col_field": "Field",
+        "col_meaning": "Meaning",
         "footer": "AFSD Predictor 1.1.0 — quick start",
         "page": "page",
         "tb_groups": ["Navigation", "Interaction", "View", "Export"],
@@ -128,6 +134,12 @@ TXT = {
             ("η_экв, S_rod", "Показаны, когда включён сток в патрон (L > 0)."),
             ("[геометрия] H, w", "Высота слоя и ширина валика — это выход, не вход."),
         ],
+        "col_action": "Действие",
+        "col_note": "Примечание",
+        "flow_note": "Для карты нужно не менее двух варьируемых параметров. При одном\nкарта не строится, но матрица планирования и регрессия остаются в силе.",
+        "panel_name": "Расчёт точки",
+        "col_field": "Поле",
+        "col_meaning": "Что означает",
         "footer": "AFSD Predictor 1.1.0 — краткое руководство",
         "page": "стр.",
         "tb_groups": ["Навигация", "Взаимодействие", "Вид", "Экспорт"],
@@ -174,6 +186,12 @@ TXT = {
             ("η_екв, S_rod", "Показані, коли увімкнено стік у патрон (L > 0)."),
             ("[геометрія] H, w", "Висота шару та ширина валика — це вихід, не вхід."),
         ],
+        "col_action": "Дія",
+        "col_note": "Примітка",
+        "flow_note": "Для карти потрібно щонайменше два варійовані параметри. За одного\nкарта не будується, але матриця планування й регресія лишаються чинними.",
+        "panel_name": "Розрахунок точки",
+        "col_field": "Поле",
+        "col_meaning": "Що означає",
         "footer": "AFSD Predictor 1.1.0 — короткий посібник",
         "page": "стор.",
         "tb_groups": ["Навігація", "Взаємодія", "Вигляд", "Експорт"],
@@ -219,6 +237,12 @@ TXT = {
             ("η_等效、S_rod", "启用棒材热流通道（L > 0）时显示。"),
             ("[几何] H、w", "层高与焊道宽度——是输出量，不是输入量。"),
         ],
+        "col_action": "操作",
+        "col_note": "说明",
+        "flow_note": "绘制云图至少需要两个变化参数。只有一个时无法绘图，\n但试验设计矩阵与回归方程仍然有效。",
+        "panel_name": "单点计算",
+        "col_field": "字段",
+        "col_meaning": "含义",
         "footer": "AFSD Predictor 1.1.0 — 快速入门",
         "page": "第",
         "tb_groups": ["导航", "交互", "视图", "导出"],
@@ -368,10 +392,15 @@ def page_window(pdf, t, fam, shot, zones_xy):
     # иначе картинка растягивается и подписи в ней плывут.
     bw = 0.615
     bh = bw * (ih / float(iw)) * (PAGE[0] / PAGE[1])
-    bx, by = 0.05, 0.865 - bh
+    bx, by = 0.335, 0.865 - bh
     ax_img = fig.add_axes([bx, by, bw, bh])
     ax_img.imshow(img)
     ax_img.axis("off")
+    # Ось со снимком кладём НИЖЕ основной: иначе она перекрывает выноски, и
+    # линии обрываются на краю окна программы вместо того, чтобы идти поверх.
+    ax_img.set_zorder(1)
+    ax.set_zorder(2)
+    ax.patch.set_visible(False)
     box = [bx, by, bw, bh]
 
     n = len(t["zones"])
@@ -384,19 +413,22 @@ def page_window(pdf, t, fam, shot, zones_xy):
         lines = desc.count(chr(10)) + 1
         ch = 0.030 + 0.019 * lines
         cy = ty - ch + 0.030
-        ax.add_patch(FancyBboxPatch((0.695, cy), 0.255, ch,
+        ax.add_patch(FancyBboxPatch((0.055, cy), 0.245, ch,
                                     boxstyle="round,pad=0.005",
                                     fc="#fdf3f4", ec=CALL, lw=0.8,
                                     transform=ax.transAxes, zorder=4))
-        ax.add_patch(FancyArrowPatch((0.693, cy + ch * 0.6), (px, py),
-                                     transform=ax.transAxes,
-                                     arrowstyle="-|>", mutation_scale=10,
-                                     lw=1.0, color=CALL, alpha=0.8,
-                                     connectionstyle="arc3,rad=0.10",
-                                     zorder=5))
-        ax.text(0.704, cy + ch - 0.016, "%d. %s" % (i + 1, name), fontsize=9.5,
+        # Выноска идёт поверх снимка, но не поперёк карты: от карточки —
+        # горизонтально до правого края окна, затем ломаной к самой метке.
+        edge = box[0] + box[2] + 0.012
+        ax.annotate("", xy=(px, py), xycoords=ax.transAxes,
+                    xytext=(0.303, cy + ch * 0.55), textcoords=ax.transAxes,
+                    arrowprops=dict(arrowstyle="-|>", color=CALL, lw=1.0,
+                                    alpha=0.85, shrinkA=0, shrinkB=2,
+                                    connectionstyle="angle,angleA=0,angleB=90,rad=6"),
+                    zorder=10)
+        ax.text(0.064, cy + ch - 0.016, "%d. %s" % (i + 1, name), fontsize=9.5,
                 color=CALL, family=fam, weight="bold", va="center", zorder=6)
-        ax.text(0.704, cy + ch - 0.030, desc, fontsize=8, color=INK, family=fam,
+        ax.text(0.064, cy + ch - 0.030, desc, fontsize=8, color=INK, family=fam,
                 linespacing=1.45, va="top", zorder=6)
         # Номер рисуем НА оси снимка, в пикселях картинки: отдельная ось
         # всегда рисуется поверх текста основной, поэтому zorder на ax не
@@ -451,25 +483,33 @@ def page_toolbar(pdf, t, fam, lang, shot):
 
 
 def page_flow(pdf, t, fam):
-    """Порядок работы: семь шагов."""
+    """Порядок работы — таблицей, в духе технической документации."""
     fig, ax = _page(pdf, fam)
     ax.text(0.06, 0.945, t["p_flow"], fontsize=20, color=INK, family=fam, weight="bold")
     ax.text(0.06, 0.912, t["flow_caption"], fontsize=10.5, color=DIM, family=fam)
 
-    y = 0.83
+    x_num, x_act, x_desc = 0.070, 0.115, 0.360
+    y = 0.835
+    # шапка таблицы
+    ax.text(x_num, y, "№", fontsize=9.5, color="#33415c", family=fam, weight="bold")
+    ax.text(x_act, y, t["col_action"], fontsize=9.5, color="#33415c",
+            family=fam, weight="bold")
+    ax.text(x_desc, y, t["col_note"], fontsize=9.5, color="#33415c",
+            family=fam, weight="bold")
+    ax.plot([0.06, 0.94], [y - 0.016, y - 0.016], color="#8f9aa8", lw=0.9)
+
+    y -= 0.052
     for num, head, desc in t["steps"]:
-        ax.add_patch(plt.Circle((0.085, y), 0.019, transform=ax.transAxes,
-                                fc=ACCENT, ec="none"))
-        ax.text(0.085, y, num, fontsize=12, color="white", family=fam,
-                ha="center", va="center", weight="bold")
-        ax.text(0.125, y + 0.012, head, fontsize=13, color=INK, family=fam,
-                weight="bold", va="center")
-        ax.text(0.125, y - 0.017, desc, fontsize=10, color=DIM, family=fam,
+        ax.text(x_num, y, num + ".", fontsize=10.5, color=INK, family=fam,
                 va="center")
-        if num != t["steps"][-1][0]:
-            ax.plot([0.085, 0.085], [y - 0.026, y - 0.075], color="#c9d6e8",
-                    lw=1.4, zorder=0)
-        y -= 0.102
+        ax.text(x_act, y, head, fontsize=10.5, color=INK, family=fam,
+                va="center", weight="bold")
+        ax.text(x_desc, y, desc, fontsize=10, color=DIM, family=fam, va="center")
+        ax.plot([0.06, 0.94], [y - 0.026, y - 0.026], color="#d7dce3", lw=0.6)
+        y -= 0.062
+
+    ax.text(0.06, y - 0.02, t["flow_note"], fontsize=9.5, color=DIM,
+            family=fam, va="top", linespacing=1.6)
 
     _footer(fig, ax, t, fam, 4)
     pdf.savefig(fig); plt.close(fig)
@@ -478,8 +518,11 @@ def page_flow(pdf, t, fam):
 def page_read(pdf, t, fam, shot):
     """Чтение результата: строка расчёта точки с расшифровкой.
 
-    Строка берётся текстом из живого расчёта, а не кадром: панель «Point
-    evaluation» на экране лежит под графиком и в кадр не попадает.
+    Оформлено под вид самой программы — серая рамка с заголовком, как у
+    панели «Point evaluation», и обычная таблица: страница описывает
+    существующее окно, а не показывает какой-то другой интерфейс.
+    Строка берётся текстом из живого расчёта, потому что панель на экране
+    лежит под графиком и в кадр не попадает.
     """
     fig, ax = _page(pdf, fam)
     ax.text(0.06, 0.945, t["p_read"], fontsize=20, color=INK, family=fam, weight="bold")
@@ -490,33 +533,40 @@ def page_read(pdf, t, fam, shot):
         with open(shot, encoding="utf-8") as fh:
             line = fh.read().strip()
     if line:
-        ax.add_patch(FancyBboxPatch((0.06, 0.815), 0.88, 0.058,
-                                    boxstyle="round,pad=0.006",
-                                    fc="#f7f9fc", ec="#c9d6e8", lw=0.9,
-                                    transform=ax.transAxes))
-        # длинную строку переносим по словам, чтобы влезла в лист
+        # рамка в духе ttk.LabelFrame: тонкая серая линия и подпись сверху
+        ax.add_patch(Rectangle((0.06, 0.775), 0.88, 0.095, fill=False,
+                               ec="#9aa4b2", lw=0.9, transform=ax.transAxes))
+        ax.add_patch(Rectangle((0.075, 0.862), 0.115, 0.016, fc="white",
+                               ec="none", transform=ax.transAxes, zorder=3))
+        ax.text(0.080, 0.870, t["panel_name"], fontsize=8.5, color="#33415c",
+                family=fam, va="center", zorder=4)
         words, rows, cur = line.split("   "), [], ""
         for wd in words:
-            if len(cur) + len(wd) > 95:
+            if len(cur) + len(wd) > 92:
                 rows.append(cur); cur = wd
             else:
                 cur = (cur + "   " + wd) if cur else wd
         rows.append(cur)
-        ax.text(0.072, 0.845, chr(10).join(rows[:2]), fontsize=9.5, color=INK,
-                family="DejaVu Sans", va="center", linespacing=1.6)
+        # поле результата — как Entry в программе: белое, с рамкой
+        ax.add_patch(Rectangle((0.075, 0.792), 0.85, 0.058, fc="white",
+                               ec="#b6bec9", lw=0.8, transform=ax.transAxes))
+        ax.text(0.085, 0.821, chr(10).join(rows[:2]), fontsize=9, color="#111111",
+                family="DejaVu Sans", va="center", linespacing=1.7)
 
-    y = 0.70
+    # таблица расшифровки: две колонки, тонкие линейки — без цветных плашек
+    y = 0.700
+    ax.plot([0.06, 0.94], [y + 0.030, y + 0.030], color="#8f9aa8", lw=0.9)
+    ax.text(0.070, y + 0.042, t["col_field"], fontsize=9.5, color="#33415c",
+            family=fam, weight="bold")
+    ax.text(0.330, y + 0.042, t["col_meaning"], fontsize=9.5, color="#33415c",
+            family=fam, weight="bold")
     for name, desc in t["reads"]:
-        ax.add_patch(FancyBboxPatch((0.075, y - 0.020), 0.185, 0.040,
-                                    boxstyle="round,pad=0.004",
-                                    fc="#eef3fb", ec="#c9d6e8", lw=0.7,
-                                    transform=ax.transAxes))
-        ax.text(0.083, y, name, fontsize=10.5, color=ACCENT, family=fam,
-                va="center", weight="bold")
-        ax.text(0.278, y, desc, fontsize=10, color=INK, family=fam, va="center")
-        y -= 0.058
+        ax.text(0.070, y, name, fontsize=10, color=INK, family=fam, va="center")
+        ax.text(0.330, y, desc, fontsize=10, color=INK, family=fam, va="center")
+        ax.plot([0.06, 0.94], [y - 0.024, y - 0.024], color="#d7dce3", lw=0.6)
+        y -= 0.055
 
-    ax.text(0.06, 0.135, t["full_guide"], fontsize=10.5, color=ACCENT, family=fam)
+    ax.text(0.06, 0.135, t["full_guide"], fontsize=10.5, color=INK, family=fam)
     _footer(fig, ax, t, fam, 5)
     pdf.savefig(fig); plt.close(fig)
 
