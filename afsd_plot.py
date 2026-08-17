@@ -26,14 +26,17 @@ import afsd_core as core
 TNR = "Times New Roman"
 
 
-# Оформление рисунка по умолчанию — снято с проекта Case1_AA6082-Ti64_map,
-# по которому готовились рисунки статьи. Программа стартует сразу с ними,
-# чтобы карту можно было сохранить в статью без ручной настройки.
+# Оформление рисунка по умолчанию — снято с project2.afsd, по которому
+# готовятся рисунки статьи. Программа стартует сразу с ними, чтобы карту
+# можно было сохранить в статью без ручной настройки.
 # У 2D и 3D наборы разные: в 3D крупный шрифт и большие отступы не нужны.
-PAPER_2D = dict(fs=28, nlev=24, window_only=True, winfill=False,
-                lblpad=19, tickpad=17,
+# Рамка фиксированных параметров стоит слева вверху — в правом верхнем углу
+# карты она перекрывала бы область высоких температур.
+PAPER_2D = dict(fs=16, nlev=24, window_only=True, winfill=False,
+                lblpad=19, tickpad=11,
                 cbar_pad=0.06, cbar_lblx=4.5, cbar_flip=False,
-                annotx=0.97, annoty=0.9655172413793104, annotscale=1.0,
+                annotx=0.06896551724137931, annoty=0.9310344827586207,
+                annotscale=1.0,
                 aspw=3.7, asph=3.0)
 
 PAPER_3D = dict(fs=11, nlev=24, window_only=True, winfill=False,
@@ -52,19 +55,19 @@ class PlotStyle:
     """
 
     def __init__(self, **kw):
-        self.fs = 28               # базовый кегль
-        self.nlev = 24             # число градаций заливки
-        self.window_only = True    # заливать только технологическое окно
-        self.winfill = False       # зелёная подсветка окна
-        self.lblpad = 19           # отступ названий осей
-        self.tickpad = 17          # отступ цифр от осей
-        self.cbar_pad = 0.06       # положение цветовой шкалы
-        self.cbar_lblx = 4.5       # позиция надписи шкалы по X
-        self.cbar_flip = False     # надпись шкалы на 180°
-        self.annotx = 0.97         # положение рамки фикс-параметров
-        self.annoty = 0.9655172413793104
-        self.annotscale = 1.0      # масштаб текста рамки
-        self.aspect = 3.0 / 3.7    # высота/ширина бокса осей (3.7:3)
+        self.fs = PAPER_2D["fs"]           # базовый кегль
+        self.nlev = PAPER_2D["nlev"]       # число градаций заливки
+        self.window_only = PAPER_2D["window_only"]  # заливка только в окне
+        self.winfill = PAPER_2D["winfill"]  # зелёная подсветка окна
+        self.lblpad = PAPER_2D["lblpad"]   # отступ названий осей
+        self.tickpad = PAPER_2D["tickpad"]  # отступ цифр от осей
+        self.cbar_pad = PAPER_2D["cbar_pad"]    # положение цветовой шкалы
+        self.cbar_lblx = PAPER_2D["cbar_lblx"]  # позиция надписи шкалы по X
+        self.cbar_flip = PAPER_2D["cbar_flip"]  # надпись шкалы на 180°
+        self.annotx = PAPER_2D["annotx"]   # положение рамки фикс-параметров
+        self.annoty = PAPER_2D["annoty"]
+        self.annotscale = PAPER_2D["annotscale"]   # масштаб текста рамки
+        self.aspect = PAPER_2D["asph"] / PAPER_2D["aspw"]   # высота/ширина бокса
         self.toolrad = False       # ось D показывать как радиус
         self.wlo, self.whi = 0.6, 0.9   # доли технологического окна
         self.elev, self.azim = 28, -130  # ракурс 3D
