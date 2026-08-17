@@ -31,3 +31,10 @@ icon_*.png
 # Рабочие файлы (не часть программы)
 TASK-for-Claude-Code.md
 project2.afsd
+
+# Экспериментальный интерфейс на Qt — в репозиторий не публикуется
+afsd_qt.py
+afsd_theme.py
+AFSD_Predictor_Qt.bat
+AFSD_Predictor_Qt.spec
+requirements-qt.txt

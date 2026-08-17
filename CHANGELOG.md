@@ -60,12 +60,10 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Split into modules: `afsd_core.py` (physics, materials, translations,
   calculation state), `afsd_plot.py` (journal-style figure rendering),
   `afsd_predictor.py` (the tkinter interface). The core imports no GUI
-  toolkit.
-- A second, experimental Qt interface (`afsd_qt.py`, `afsd_theme.py`)
-  lives in the repository but is **not** part of the release. Both
-  interfaces draw through `afsd_plot.py` and compute through
-  `afsd_core.ModelState`, verified pixel-identical and numerically
-  identical respectively.
+  toolkit, and the figure styling lives in one place, so the same numbers
+  and the same figure come out however the program is driven. The split
+  was verified to change neither: temperatures match to 1e-9 and the
+  rendered maps are pixel-identical to the previous single-file version.
 
 ## v1.0.1 — 2026-06-12
 

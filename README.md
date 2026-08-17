@@ -39,44 +39,28 @@ figure export (PNG / PDF / SVG).
 ## Installation
 
 ### Option A — Windows executable (no Python required)
-Download `AFSD_Predictor.exe` (Tk interface) from the [Releases](../../releases)
-page and run it. The `user_materials.json` and `user_mu.json` databases are
-created next to the executable on first save.
+Download `AFSD_Predictor.exe` from the [Releases](../../releases) page and run
+it. The `user_materials.json` and `user_mu.json` databases are created next to
+the executable on first save.
 
-To build the Qt interface yourself:
+To build it yourself:
 
 ```bash
-pip install pyinstaller -r requirements-qt.txt
-pyinstaller --noconfirm --clean AFSD_Predictor_Qt.spec
+pip install pyinstaller -r requirements.txt
+pyinstaller --noconfirm --clean AFSD_Predictor.spec
 ```
-
-The result is a folder, `dist/AFSD_Predictor_Qt/`, launched through the
-executable inside it. It is deliberately not a single file: a one-file build
-has to unpack ~80 MB to a temporary directory on every start, which some
-security software stalls, leaving a process that never shows a window.
 
 ### Option B — run from source (any OS)
 
-Two interfaces ship with the program. They share one calculation core, so
-both produce identical numbers; pick whichever you prefer.
-
-**Qt interface** (`afsd_qt.py`) — light/dark themes, tabbed layout:
-
-```bash
-pip install -r requirements-qt.txt
-python afsd_qt.py
-```
-
-**Tk interface** (`afsd_predictor.py`) — the original window, no Qt needed.
 Requires Python 3.9+ with `tkinter` (bundled with the standard Windows/macOS
-installer):
+installer) and the packages below:
 
 ```bash
 pip install -r requirements.txt
 python afsd_predictor.py
 ```
 
-On Windows you can double-click `AFSD_Predictor_Qt.bat` or `AFSD_Predictor.bat`.
+On Windows you can also double-click `AFSD_Predictor.bat`.
 
 ## Quick start
 
@@ -111,23 +95,21 @@ deliberately absorbed into eta.
 
 | File | Description |
 |------|-------------|
-| `afsd_core.py` | Calculation core: physics, material database, translations. Imports no GUI toolkit. |
-| `afsd_qt.py` | Qt interface (PySide6), light/dark themes. |
-| `afsd_theme.py` | Colour palette and stylesheet for the Qt interface. |
-| `afsd_predictor.py` | Tk interface (the original window). |
-| `AFSD_Predictor_Qt.bat` | Windows launcher for the Qt interface. |
-| `AFSD_Predictor.bat` | Windows launcher for the Tk interface. |
+| `afsd_predictor.py` | The application window (tkinter). |
+| `afsd_core.py` | Calculation core: physics, material database, translations, calculation state. Imports no GUI toolkit. |
+| `afsd_plot.py` | Journal-style figure rendering (maps and 3D surfaces). |
+| `AFSD_Predictor.bat` | Windows launcher. |
+| `AFSD_Predictor.spec` | PyInstaller build description. |
 | `user_materials.json` | Default material database (editable in-app). |
 | `user_mu.json` | Default mu(T) pair tables (editable in-app). |
-| `requirements.txt` | Dependencies for the Tk interface. |
-| `requirements-qt.txt` | Dependencies for the Qt interface. |
+| `requirements.txt` | Python dependencies. |
+| `CHANGELOG.md` | Release notes. |
+| `CITATION.cff` | Citation metadata. |
 | `LICENSE` | MIT license. |
 
-Both interfaces call the same `afsd_core.ModelState`, so a map, a design
-matrix or a point evaluation gives the same result in either window.
-PySide6 is used rather than PyQt because its LGPL licence is compatible
-with this project's MIT licence.
-| `CITATION.cff` | Citation metadata. |
+The physics lives in `afsd_core.py` and the figure styling in
+`afsd_plot.py`, so neither depends on the interface: the same numbers and
+the same figure come out however the program is driven.
 
 ## Citation
 

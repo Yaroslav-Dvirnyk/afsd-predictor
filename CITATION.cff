@@ -28,8 +28,8 @@ identifiers:
   - type: doi
     value: 10.5281/zenodo.20669797
     description: "Concept DOI (all versions)"
-  # TODO: заменить на version DOI, который Zenodo выдаст после публикации v1.1.0
-  # (concept DOI выше не трогать — он общий для всех версий)
+  # Replace with the version DOI Zenodo mints for v1.1.0 once published.
+  # The concept DOI above is shared by all versions and must stay as is.
   - type: doi
     value: 10.5281/zenodo.20669798
     description: "Version DOI (v1.0.1)"
