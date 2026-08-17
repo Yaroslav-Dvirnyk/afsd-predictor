@@ -319,13 +319,36 @@ class App(tk.Tk):
                 try:
                     _f()
                 except Exception as exc:                 # не гасим остальные клавиши
-                    print("[AFSD hotkey] %s failed: %r" % (getattr(_f, "__name__", _f), exc))
+                    debug_print("[AFSD hotkey] %s failed: %r"
+                                % (getattr(_f, "__name__", _f), exc))
                 return "break"
             return _h
+        self._hotkey_handlers = {}
         for seq, fn in binds.items():
             h = _wrap(fn)
+            self._hotkey_handlers[seq] = h
             self.bind_all(seq, h)
             self.bind(seq, h)                            # дубль на само окно
+        self._bind_hotkeys_to_canvas()
+
+    def _bind_hotkeys_to_canvas(self):
+        """Продублировать горячие клавиши на виджет канвы matplotlib.
+
+        FigureCanvasTkAgg вешает на себя <Key>/<KeyRelease> и свой
+        key_press_event. После клика по графику фокус уходит на канву, она
+        перехватывает нажатие, и до окна оно не доходит — Ctrl+S молчал
+        именно поэтому. Привязка на сам виджет канвы возвращает клавиши.
+        """
+        widget = None
+        try:
+            widget = self.canvas.get_tk_widget()
+        except Exception:
+            return
+        for seq, h in getattr(self, "_hotkey_handlers", {}).items():
+            try:
+                widget.bind(seq, h)
+            except tk.TclError:
+                pass
 
     # ---------- body ----------
     def _section(self, parent, title, key):
@@ -976,6 +999,9 @@ class App(tk.Tk):
         # интерактив точек: наведение -> крестик удаления; 2-й клик -> правка буквы
         self.canvas.mpl_connect("motion_notify_event", self._on_pt_motion)
         self.canvas.mpl_connect("button_press_event", self._on_pt_click)
+        # горячие клавиши создавались до канвы — привязываем их и к ней, иначе
+        # после клика по графику фокус уходит на канву и Ctrl+S не срабатывает
+        self._bind_hotkeys_to_canvas()
 
         bottom = ttk.LabelFrame(tab_plot, text=self.t("grp_point"), padding=6)
         bottom.pack(fill="x", pady=4)
@@ -1733,8 +1759,11 @@ class App(tk.Tk):
             extra += (f"   η_экв={aud['eta_rod']:.2f} (L={self._fields['rod_L'].get()} мм,"
                       f" S_rod={aud['sink_rod']:.3f} Вт/К, Pe_L={aud['Pe_L']:.2f})")
         if self.input_mode == "kin":
+            # H и w — ВЫХОД баланса в безбуртовой схеме: в тепловой расчёт входит
+            # объёмный расход подачи πR²v_f, а не сечение валика. Влияют на T только
+            # в старой эмпирической ветке (C_emp) и в схеме с плечом (через R_eff).
             wb_used = self._f("w_bead") if self.beadw_on_var.get() else 2.0 * R
-            extra += f"   H={H:.2f} мм   w={wb_used:.2f} мм"
+            extra += f"   [геометрия] H={H:.2f} мм   w={wb_used:.2f} мм"
         elif self.input_mode == "shoulder":
             extra += f"   R_eff={R:.2f} мм"
         extra += f"   Pe={aud['Pe']:.2f}, G={aud['G']:.2f}"

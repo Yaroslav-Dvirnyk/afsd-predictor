@@ -483,7 +483,12 @@ TR = {
                   en="D, rod diameter [mm]"),
     "lbl_wbead": dict(uk="w, ширина валика [мм]", ru="w, ширина валика [мм]",
                       en="w, bead width [mm]"),
-    "chk_beadw": dict(uk="врахувати w:", ru="учесть w:", en="use w:"),
+    # Ширина валика не влияет на температуру: в тепловой баланс входит объёмный
+    # расход подачи πR²·v_f, а w лишь распределяет его по сечению. Подпись прямо
+    # говорит об этом, иначе непонятно, почему T не меняется при правке w.
+    "chk_beadw": dict(uk="врахувати w (лише для H):",
+                      ru="учесть w (только для H):",
+                      en="use w (affects H only):"),
     "btn_clear_pts": dict(uk="Очистити точки", ru="Очистить точки", en="Clear points"),
     "pt_edit_title": dict(uk="Мітка точки", ru="Метка точки", en="Point label"),
     "pt_edit_msg": dict(uk="Нова літера/мітка точки:", ru="Новая буква/метка точки:",
@@ -791,6 +796,7 @@ ZH = {
     "color_full": "全范围", "color_win": "仅工作窗口", "lbl_color": "颜色",
     "lbl_style": "图形外观", "chk_tdep": "k, cₚ 随温度（表）",
     "chk_feedsink": "进给对流散热 ρcₚ·V̇", "lbl_mu": "μ，摩擦系数",
+    "chk_beadw": "使用 w（仅影响 H）：",
     "lbl_eta": "η，热保留系数 (0–1)", "lbl_force": "F，轴向力 [kN]",
     "lbl_rodl": "L，棒材伸出长度 [mm]（0 = 关闭）",
     "mat_refresh": "刷新", "mat_export": "导出 CSV", "set_ok": "确定", "set_cancel": "取消",
@@ -1635,9 +1641,24 @@ class ModelState:
                     mu_tdep=self.mu_tdep, mu_pair=self.mu_pair,
                     use_feedsink=self.use_feedsink, use_pe=self.use_pe,
                     use_tdep=self.use_tdep, beadw_on=self.beadw_on,
+                    # "tdep" — имя того же флага в формате Tk-окна; пишем оба,
+                    # чтобы проект открывался в обеих программах
+                    tdep=self.use_tdep,
                     input_mode=self.input_mode, model_key=self.model_key,
                     xaxis=self.xaxis, yaxis=self.yaxis,
                     wlo=self.wlo, whi=self.whi)
+
+    # Имена флагов в файле проекта не всегда совпадают с именами полей модели:
+    # Tk-окно пишет "tdep", а модель хранит "use_tdep". Пока это расхождение не
+    # учитывалось, температурная зависимость k(T), cp(T) при загрузке проекта
+    # молча выключалась и температура расходилась с сохранённой.
+    _FLAG_ALIASES = {"use_tdep": ("use_tdep", "tdep"),
+                     "sub_same": ("sub_same",),
+                     "bore": ("bore",),
+                     "mu_tdep": ("mu_tdep",),
+                     "use_feedsink": ("use_feedsink",),
+                     "use_pe": ("use_pe",),
+                     "beadw_on": ("beadw_on", "beadw")}
 
     def from_dict(self, d):
         """Восстановить состояние из .afsd. Неизвестные ключи игнорируются."""
@@ -1652,16 +1673,26 @@ class ModelState:
                      "input_mode", "model_key", "xaxis", "yaxis"):
             if name in d:
                 setattr(self, name, d[name])
-        for name in ("sub_same", "bore", "mu_tdep", "use_feedsink",
-                     "use_pe", "use_tdep", "beadw_on"):
-            if name in d:
-                setattr(self, name, bool(d[name]))
+        for attr, keys in self._FLAG_ALIASES.items():
+            for key in keys:
+                # null в файле означает «не записано», а не «выключено»:
+                # приводить его к False нельзя, иначе проект грузится с чужими
+                # настройками (так подложка подменялась материалом прутка).
+                if key in d and d[key] is not None:
+                    setattr(self, attr, bool(d[key]))
+                    break
         for name in ("wlo", "whi"):
             if name in d:
                 try:
                     setattr(self, name, float(d[name]))
                 except (TypeError, ValueError):
                     pass
+        # Если флаг «подложка = материал прутка» в файле не записан, выводим его
+        # из данных: явно указанный другой материал подложки означает, что она
+        # своя. Иначе свойства подложки молча подменялись свойствами прутка.
+        if d.get("sub_same") is None and d.get("substrate"):
+            if d["substrate"] not in (SUB_SAME, self.preset):
+                self.sub_same = False
 
 
 def poly_body(terms):
