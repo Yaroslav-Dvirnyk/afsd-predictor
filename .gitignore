@@ -27,3 +27,7 @@ Thumbs.db
 
 # intermediate icon render
 icon_*.png
+
+# Рабочие файлы (не часть программы)
+TASK-for-Claude-Code.md
+project2.afsd
