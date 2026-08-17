@@ -26,27 +26,45 @@ import afsd_core as core
 TNR = "Times New Roman"
 
 
+# Оформление рисунка по умолчанию — снято с проекта Case1_AA6082-Ti64_map,
+# по которому готовились рисунки статьи. Программа стартует сразу с ними,
+# чтобы карту можно было сохранить в статью без ручной настройки.
+# У 2D и 3D наборы разные: в 3D крупный шрифт и большие отступы не нужны.
+PAPER_2D = dict(fs=28, nlev=24, window_only=True, winfill=False,
+                lblpad=19, tickpad=17,
+                cbar_pad=0.06, cbar_lblx=4.5, cbar_flip=False,
+                annotx=0.97, annoty=0.9655172413793104, annotscale=1.0,
+                aspw=3.7, asph=3.0)
+
+PAPER_3D = dict(fs=11, nlev=24, window_only=True, winfill=False,
+                lblpad=6, tickpad=3,
+                cbar_pad=0.10, cbar_lblx=3.5, cbar_flip=False,
+                annotx=0.02, annoty=0.96, annotscale=1.0,
+                aspw=4.0, asph=3.0, elev=28, azim=-130, n3d=48)
+
+
 class PlotStyle:
     """Настройки оформления рисунка.
 
-    Значения по умолчанию — те, что подобраны для статьи; интерфейс меняет
-    их через свои панели, но набор и смысл полей общий для обоих окон.
+    Значения по умолчанию — те, что подобраны для статьи (PAPER_2D);
+    интерфейс меняет их через свои панели, но набор и смысл полей общий
+    для обоих окон.
     """
 
     def __init__(self, **kw):
-        self.fs = 13               # базовый кегль
+        self.fs = 28               # базовый кегль
         self.nlev = 24             # число градаций заливки
-        self.window_only = False   # заливать только технологическое окно
+        self.window_only = True    # заливать только технологическое окно
         self.winfill = False       # зелёная подсветка окна
-        self.lblpad = 6            # отступ названий осей
-        self.tickpad = 3           # отступ цифр от осей
-        self.cbar_pad = 0.06       # положение цветовой шкалы (подобрано для статьи)
-        self.cbar_lblx = 3.5       # позиция надписи шкалы по X
+        self.lblpad = 19           # отступ названий осей
+        self.tickpad = 17          # отступ цифр от осей
+        self.cbar_pad = 0.06       # положение цветовой шкалы
+        self.cbar_lblx = 4.5       # позиция надписи шкалы по X
         self.cbar_flip = False     # надпись шкалы на 180°
         self.annotx = 0.97         # положение рамки фикс-параметров
-        self.annoty = 0.96
+        self.annoty = 0.9655172413793104
         self.annotscale = 1.0      # масштаб текста рамки
-        self.aspect = 0.75         # высота/ширина бокса осей
+        self.aspect = 3.0 / 3.7    # высота/ширина бокса осей (3.7:3)
         self.toolrad = False       # ось D показывать как радиус
         self.wlo, self.whi = 0.6, 0.9   # доли технологического окна
         self.elev, self.azim = 28, -130  # ракурс 3D
@@ -175,7 +193,7 @@ def draw_2d(fig, X, Y, T, xN, yN, Tmin, Tmax, annot="", st=None, points=None):
         except Exception:
             pass
 
-    overlay_regression(fig, fs, st.reg_text)
+    overlay_regression(fig, fs, st.reg_text, st.cbar_lblx)
     return ax
 
 
@@ -267,9 +285,16 @@ def draw_points(ax, xN, yN, fs, points):
                                          ec="0.4", alpha=0.95))
 
 
-def overlay_regression(fig, fs, text):
-    """Сокращённое уравнение T_peak(x,y) внизу карты — по тумблеру."""
-    fig.tight_layout(rect=(0, 0.08, 1, 1) if text else (0, 0, 1, 1))
+def overlay_regression(fig, fs, text, cbar_lblx=3.5):
+    """Сокращённое уравнение T_peak(x,y) внизу карты — по тумблеру.
+
+    Заодно резервирует место справа: подпись цветовой шкалы отодвинута на
+    cbar_lblx ширин шкалы, а tight_layout её положение не учитывает, и при
+    больших значениях она срезается краем рисунка.
+    """
+    right = 1.0 if cbar_lblx <= 3.6 else max(0.86, 1.0 - 0.03 * (cbar_lblx - 3.5))
+    bottom = 0.08 if text else 0.0
+    fig.tight_layout(rect=(0, bottom, right, 1))
     if text:
         fig.text(0.5, 0.015, text, ha="center", va="bottom",
                  fontsize=max(7, fs - 2), family=TNR, color="#111",

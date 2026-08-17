@@ -6,11 +6,19 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('user_materials.json', '.'), ('user_mu.json', '.'), ('app.ico', '.')],
-    hiddenimports=['afsd_core'],
+    # Ядро расчёта и отрисовка графика — обычные импорты, но перечислены
+    # явно, чтобы анализатор их точно не пропустил.
+    hiddenimports=['afsd_core', 'afsd_plot'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # Qt в этой сборке не нужен (интерфейс на tkinter), а scipy/pandas
+    # тянутся через matplotlib, хотя программа их не вызывает. Без этих
+    # исключений однофайловый exe разрастается и дольше распаковывается.
+    excludes=[
+        'PySide6', 'PyQt5', 'PyQt6', 'PySide2', 'shiboken6',
+        'scipy', 'pandas', 'IPython', 'jupyter', 'notebook', 'pytest',
+    ],
     noarchive=False,
     optimize=0,
 )

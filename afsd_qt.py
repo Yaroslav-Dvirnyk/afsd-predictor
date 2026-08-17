@@ -540,19 +540,22 @@ class MainWindow(QMainWindow):
         lay.addWidget(c_win)
 
         c_txt = self._card("grp_text", "Текст и сетка")
-        self.sp_fs = QSpinBox(); self.sp_fs.setRange(6, 28); self.sp_fs.setValue(13)
+        self.sp_fs = QSpinBox(); self.sp_fs.setRange(6, 48)
+        self.sp_fs.setValue(plot.PAPER_2D["fs"])
         self.sp_fs.valueChanged.connect(lambda _v: self.redraw())
         r = QHBoxLayout(); r.addWidget(self._lbl("lbl_fs", "Размер текста"))
         r.addWidget(self.sp_fs); r.addStretch(1)
         c_txt.body.addLayout(r)
 
-        self.sp_lev = QSpinBox(); self.sp_lev.setRange(6, 60); self.sp_lev.setValue(24)
+        self.sp_lev = QSpinBox(); self.sp_lev.setRange(6, 60)
+        self.sp_lev.setValue(plot.PAPER_2D["nlev"])
         self.sp_lev.valueChanged.connect(lambda _v: self.redraw())
         r = QHBoxLayout(); r.addWidget(self._lbl("lbl_levels", "Градаций цвета"))
         r.addWidget(self.sp_lev); r.addStretch(1)
         c_txt.body.addLayout(r)
 
-        self.sp_n3d = QSpinBox(); self.sp_n3d.setRange(16, 160); self.sp_n3d.setValue(48)
+        self.sp_n3d = QSpinBox(); self.sp_n3d.setRange(16, 160)
+        self.sp_n3d.setValue(plot.PAPER_3D["n3d"])
         self.sp_n3d.valueChanged.connect(lambda _v: self.rebuild())
         r = QHBoxLayout(); r.addWidget(self._lbl("lbl_n3d", "Сетка 3D"))
         r.addWidget(self.sp_n3d); r.addStretch(1)
@@ -575,6 +578,7 @@ class MainWindow(QMainWindow):
         # --- журнальный вид: то, чем рисунок доводится под требования статьи ---
         c_pap = self._card("grp_paper", "Для статьи")
         self.chk_winonly = self._chk("color_win", "Заливка только в окне")
+        self.chk_winonly.setChecked(plot.PAPER_2D["window_only"])
         self.chk_winonly.toggled.connect(lambda _v: self.redraw())
         c_pap.body.addWidget(self.chk_winonly)
         self.chk_toolrad = self._chk("chk_toolrad", "Ось D как радиус R")
@@ -601,14 +605,14 @@ class MainWindow(QMainWindow):
             return sp
 
         # отношение сторон бокса осей: журналы просят конкретную пропорцию
-        self.sp_aspw = spin("lbl_aspw", "Ширина (отн.)", 0.5, 20.0, 4.0, 0.5, 2)
-        self.sp_asph = spin("lbl_asph", "Высота (отн.)", 0.5, 20.0, 3.0, 0.5, 2)
-        self.sp_lblpad = spin("lbl_lblpad", "Отступ названий осей", 0, 40, 6)
-        self.sp_tickpad = spin("lbl_tickpad", "Отступ цифр", 0, 30, 3)
-        self.sp_cbpad = spin("lbl_cbpad", "Отступ шкалы", -0.02, 0.40, 0.06, 0.01, 2)
-        self.sp_cblbl = spin("lbl_cblbl", "Надпись шкалы, X", -6.0, 8.0, 3.5, 0.5, 1)
-        self.sp_annotx = spin("lbl_annotx", "Рамка, X", 0.0, 1.0, 0.97, 0.01, 2)
-        self.sp_annoty = spin("lbl_annoty", "Рамка, Y", 0.0, 1.0, 0.96, 0.01, 2)
+        self.sp_aspw = spin("lbl_aspw", "Ширина (отн.)", 0.5, 20.0, plot.PAPER_2D["aspw"], 0.1, 2)
+        self.sp_asph = spin("lbl_asph", "Высота (отн.)", 0.5, 20.0, plot.PAPER_2D["asph"], 0.1, 2)
+        self.sp_lblpad = spin("lbl_lblpad", "Отступ названий осей", 0, 40, plot.PAPER_2D["lblpad"])
+        self.sp_tickpad = spin("lbl_tickpad", "Отступ цифр", 0, 30, plot.PAPER_2D["tickpad"])
+        self.sp_cbpad = spin("lbl_cbpad", "Отступ шкалы", -0.02, 0.40, plot.PAPER_2D["cbar_pad"], 0.01, 2)
+        self.sp_cblbl = spin("lbl_cblbl", "Надпись шкалы, X", -6.0, 8.0, plot.PAPER_2D["cbar_lblx"], 0.5, 1)
+        self.sp_annotx = spin("lbl_annotx", "Рамка, X", 0.0, 1.0, plot.PAPER_2D["annotx"], 0.01, 4)
+        self.sp_annoty = spin("lbl_annoty", "Рамка, Y", 0.0, 1.0, plot.PAPER_2D["annoty"], 0.01, 4)
         self.sp_annotsc = spin("lbl_annotsc", "Рамка, масштаб", 0.3, 3.0, 1.0, 0.05, 2)
         lay.addWidget(c_pap)
         lay.addStretch(1)
@@ -1237,7 +1241,18 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage("%s: %s" % (self.t("saved", "Сохранено"), path), 3000)
 
-    def _render_figure_to(self, path, size=(7.2, 5.4), dpi=300):
+    def _export_size(self, stl):
+        """Размер фигуры для экспорта — из отношения сторон и кегля.
+
+        Кегль «для статьи» (28) рассчитан на большое полотно: на 7×5 дюймах
+        подписи и рамка налезают друг на друга. Ширину берём пропорционально
+        кеглю, высоту — из заданного отношения сторон.
+        """
+        w = max(7.2, 0.43 * float(stl.fs))          # 28 pt -> ~12 дюймов
+        aspect = stl.aspect if stl.aspect > 0.05 else 0.75
+        return (w, max(4.0, w * aspect))
+
+    def _render_figure_to(self, path, size=None, dpi=300):
         """Отрисовать карту заново на отдельной фигуре и сохранить.
 
         Экранную фигуру сохранять нельзя: tight_layout подгоняет поля под
@@ -1251,6 +1266,8 @@ class MainWindow(QMainWindow):
         xN, yN, xv, yv, T, fixed = g
         Tmin, Tmax = self.st.window()
         stl = self._plot_style()
+        if size is None:
+            size = self._export_size(stl)
         annot = plot.annot_text(fixed, stl.toolrad)
         X, Y = np.meshgrid(xv, yv)
         fig = Figure(figsize=size, dpi=dpi, facecolor="white")

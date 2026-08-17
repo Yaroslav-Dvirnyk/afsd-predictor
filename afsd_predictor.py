@@ -55,8 +55,8 @@ class App(tk.Tk):
         self.ui_family = "Segoe UI"
         self.ui_size = 10
         self.plot_family = "DejaVu Sans"
-        self.plot_fs = 13               # крупнее по умолчанию — читаемо «как для статьи»
-        self.cbar_pad = 0.06          # отступ цветовой шкалы от графика
+        self.plot_fs = afsd_plot.PAPER_2D["fs"]   # кегль «как для статьи»
+        self.cbar_pad = afsd_plot.PAPER_2D["cbar_pad"]  # отступ цветовой шкалы
         self.n3d = 48                 # плотность 3D-сетки (меньше = быстрее вращение)
 
         self._init_vars()
@@ -146,7 +146,8 @@ class App(tk.Tk):
         self.preset_var = tk.StringVar(value=DEFAULT_PRESET)
         self.model_key = "phys"           # оба процесса используют физ. модель
         self.view_var = tk.StringVar(value="2D")
-        self.colormode_var = tk.StringVar(value="full")
+        # заливка только в технологическом окне — как в проекте статьи
+        self.colormode_var = tk.StringVar(value="window")
         # оси и фиксированные значения (2 оси + остальные фикс.)
         self.xaxis_var = tk.StringVar(value="ω")
         self.yaxis_var = tk.StringVar(value="vx")
@@ -156,19 +157,23 @@ class App(tk.Tk):
                    "D": 15.0, "a": 9.5, "F": 8.0}
         self.fix_vars = {f: tk.DoubleVar(value=v) for f, v in _fixdef.items()}
         self.result_var = tk.StringVar(value="—")
-        self.plotfs_var = tk.IntVar(value=self.plot_fs)   # размер текста графика
-        self.lblpad_var = tk.IntVar(value=6)              # отступ названий осей
-        self.tickpad_var = tk.IntVar(value=3)             # отступ цифр от осей
-        self.nlev_var = tk.IntVar(value=24)               # число градиентных цветов
-        self.aspect_var = tk.DoubleVar(value=0.75)        # аспект (высота/ширина) = H/W
-        self.aspw_var = tk.DoubleVar(value=4.0)           # отношение сторон: ширина
-        self.asph_var = tk.DoubleVar(value=3.0)           # отношение сторон: высота
-        self.annotx_var = tk.DoubleVar(value=0.97)        # позиция рамки X (0..1)
-        self.annoty_var = tk.DoubleVar(value=0.96)        # позиция рамки Y (0..1)
+        # Стартовое оформление — набор «для статьи» из общего модуля отрисовки
+        # (снят с проекта Case1_AA6082-Ti64_map), чтобы карту можно было
+        # сохранять в статью сразу после запуска, без ручной настройки.
+        _P = afsd_plot.PAPER_2D
+        self.plotfs_var = tk.IntVar(value=_P["fs"])       # размер текста графика
+        self.lblpad_var = tk.IntVar(value=_P["lblpad"])   # отступ названий осей
+        self.tickpad_var = tk.IntVar(value=_P["tickpad"])  # отступ цифр от осей
+        self.nlev_var = tk.IntVar(value=_P["nlev"])       # число градиентных цветов
+        self.aspect_var = tk.DoubleVar(value=_P["asph"] / _P["aspw"])   # H/W
+        self.aspw_var = tk.DoubleVar(value=_P["aspw"])    # отношение сторон: ширина
+        self.asph_var = tk.DoubleVar(value=_P["asph"])    # отношение сторон: высота
+        self.annotx_var = tk.DoubleVar(value=_P["annotx"])  # позиция рамки X (0..1)
+        self.annoty_var = tk.DoubleVar(value=_P["annoty"])  # позиция рамки Y (0..1)
         self.toolrad_var = tk.BooleanVar(value=False)     # радиус вместо диаметра
-        self.cbar_flip_var = tk.BooleanVar(value=False)   # надпись шкалы на 180°
-        self.cbar_lblx_var = tk.DoubleVar(value=3.5)      # позиция надписи шкалы по X
-        self.cbar_pad_var = tk.DoubleVar(value=self.cbar_pad)  # положение шкалы (отступ)
+        self.cbar_flip_var = tk.BooleanVar(value=_P["cbar_flip"])  # надпись шкалы на 180°
+        self.cbar_lblx_var = tk.DoubleVar(value=_P["cbar_lblx"])   # надпись шкалы по X
+        self.cbar_pad_var = tk.DoubleVar(value=_P["cbar_pad"])     # положение шкалы
         self.annotscale_var = tk.DoubleVar(value=1.0)     # масштаб рамки фикс-параметров
         self.wlo_var = tk.DoubleVar(value=0.6)            # нижняя граница окна (×T_s)
         self.whi_var = tk.DoubleVar(value=0.9)            # верхняя граница окна (×T_s)
@@ -183,9 +188,11 @@ class App(tk.Tk):
         self._style_store = {"2D": {}, "3D": {}}
         self._save_style("2D")
         self._save_style("3D")
-        self._style_store["3D"]["plotfs"] = 11
-        self._style_store["3D"]["annotx"] = 0.02
-        self._style_store["3D"]["cbar_pad"] = 0.10
+        for _k, _v in (("plotfs", "fs"), ("lblpad", "lblpad"), ("tickpad", "tickpad"),
+                       ("annotx", "annotx"), ("annoty", "annoty"),
+                       ("cbar_pad", "cbar_pad"), ("cbar_lblx", "cbar_lblx"),
+                       ("aspw", "aspw"), ("asph", "asph")):
+            self._style_store["3D"][_k] = afsd_plot.PAPER_3D[_v]
         self._style_collapsed = True                       # панель оформления свёрнута (экономит место)
         self._collapsed = {}              # состояние свёрнутости секций (по ключам)
         self._last_grid = None
