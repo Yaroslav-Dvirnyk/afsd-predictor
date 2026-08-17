@@ -38,3 +38,7 @@ afsd_theme.py
 AFSD_Predictor_Qt.bat
 AFSD_Predictor_Qt.spec
 requirements-qt.txt
+
+# Комплект для публикации на Zenodo (собирается скриптами, в репозиторий не идёт)
+release/
+build/
