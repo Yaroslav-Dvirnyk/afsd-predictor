@@ -24,13 +24,18 @@ keywords:
 license: MIT
 version: "1.1.0"
 date-released: "2026-08-17"
+# Only the concept DOI is listed here. A version DOI must never be carried
+# over from a previous release: tools read the YAML, not the comments, and
+# would pair this version with the wrong record. After publishing v1.1.0 on
+# Zenodo, add the version DOI it mints:
+#
+#   - type: doi
+#     value: <version DOI for v1.1.0>
+#     description: "Version DOI (v1.1.0)"
+#
+# The concept DOI below is shared by all versions and stays as is.
 identifiers:
   - type: doi
     value: 10.5281/zenodo.20669797
     description: "Concept DOI (all versions)"
-  # Replace with the version DOI Zenodo mints for v1.1.0 once published.
-  # The concept DOI above is shared by all versions and must stay as is.
-  - type: doi
-    value: 10.5281/zenodo.20669798
-    description: "Version DOI (v1.0.1)"
 repository-code: "https://github.com/Yaroslav-Dvirnyk/afsd-predictor"
