@@ -73,30 +73,71 @@ class PlotStyle:
         self.elev, self.azim = 28, -130  # ракурс 3D
         self.n3d = 48              # плотность 3D-сетки
         self.reg_text = None       # уравнение под картой (или None)
+        # Язык подписей САМОГО рисунка. None — журнальный английский
+        # независимо от языка интерфейса: рисунок идёт в статью как есть.
+        # Код языка ("uk", "zh") переводит оси и рамку.
+        self.lang = None
         for k, v in kw.items():
             if hasattr(self, k):
                 setattr(self, k, v)
 
 
-def plot_label(name, toolrad=False):
-    """Подпись оси в журнальном стиле: «Rotational Speed, ω (rev/min)»."""
+def _tpeak_label(lang):
+    """Подпись шкалы: «Peak Temperature, T (°C)» либо перевод."""
+    if lang and lang != "en":
+        return r"%s, $T$ ($^{\circ}$C)" % _tr("cbar_tpeak", lang)
+    return r"Peak Temperature, $T$ ($^{\circ}$C)"
+
+
+def _tr(key, lang):
+    """Строка перевода из ядра; при отсутствии — английская."""
+    if lang == "zh" and key in core.ZH:
+        return core.ZH[key]
+    d = core.TR.get(key, {})
+    return d.get(lang) or d.get("en") or key
+
+
+def plot_label(name, toolrad=False, lang=None):
+    """Подпись оси.
+
+    lang=None — журнальный английский из JLAB: «Rotational Speed, ω (rev/min)».
+    Это умолчание, потому что рисунок сохраняется прямо в статью.
+    Код языка переводит название и единицы по словарю интерфейса.
+    """
+    if lang and lang != "en":
+        n = _tr(core.AX_LABEL_KEY.get(name, ""), lang)
+        u = _tr(core.AX_UNIT_KEY.get(name, ""), lang)
+        if name == "D" and toolrad:
+            n = _tr("ax_r", lang)
+        # Названия в AX_LABEL_KEY уже содержат и символ, и единицы
+        # («Кутова швидкість ω, об/хв»), поэтому единицы отдельно не дописываем.
+        return n
     n, sym, u = core.JLAB[name]
     if name == "D" and toolrad:                 # радиус вместо диаметра
         n, sym = "Tool Radius", "R"
     return r"%s, $%s$ (%s)" % (n, sym, u)
 
 
-def plot_annot(name, val, toolrad=False):
+def plot_annot(name, val, toolrad=False, lang=None):
     """Строка рамки фиксированных параметров: «Tool Diameter, D = 15 mm»."""
+    if lang and lang != "en":
+        n = _tr(core.AX_LABEL_KEY.get(name, ""), lang)
+        u = _tr(core.AX_UNIT_KEY.get(name, ""), lang)
+        if name == "D" and toolrad:
+            n, val = _tr("ax_r", lang), val / 2.0
+        # в названии уже есть единицы; в рамке нужно значение, поэтому
+        # берём название без хвоста «, единицы» и дописываем число
+        base = n.rsplit(",", 1)[0] if "," in n else n
+        return "%s = %g %s" % (base, val, u)
     n, sym, u = core.JLAB[name]
     if name == "D" and toolrad:
         n, sym, val = "Tool Radius", "R", val / 2.0
     return r"%s, $%s$ = %g %s" % (n, sym, val, u)
 
 
-def annot_text(fixed, toolrad=False):
+def annot_text(fixed, toolrad=False, lang=None):
     """Многострочная рамка по словарю удерживаемых параметров."""
-    return "\n".join(plot_annot(s, v, toolrad) for s, v in fixed.items())
+    return "\n".join(plot_annot(s, v, toolrad, lang) for s, v in fixed.items())
 
 
 def draw_2d(fig, X, Y, T, xN, yN, Tmin, Tmax, annot="", st=None, points=None):
@@ -123,7 +164,7 @@ def draw_2d(fig, X, Y, T, xN, yN, Tmin, Tmax, annot="", st=None, points=None):
         cf = ax.contourf(X, Y, T, levels=nlev, cmap="turbo")
 
     cb = fig.colorbar(cf, ax=ax, pad=st.cbar_pad)
-    cb.set_label(r"Peak Temperature, $T$ ($^{\circ}$C)", fontsize=fs, fontname=TNR,
+    cb.set_label(_tpeak_label(st.lang), fontsize=fs, fontname=TNR,
                  color="k", rotation=(270 if st.cbar_flip else 90))
     cb.ax.yaxis.set_label_coords(st.cbar_lblx, 0.5)
     cb.ax.tick_params(labelsize=fs - 1, colors="k")
@@ -168,9 +209,9 @@ def draw_2d(fig, X, Y, T, xN, yN, Tmin, Tmax, annot="", st=None, points=None):
                 fontsize=afs, fontname=TNR, color="k", zorder=50,
                 bbox=dict(boxstyle="round,pad=0.4", fc="white", ec="0.5", alpha=1.0))
 
-    ax.set_xlabel(plot_label(xN, st.toolrad), fontsize=fs, fontname=TNR,
+    ax.set_xlabel(plot_label(xN, st.toolrad, st.lang), fontsize=fs, fontname=TNR,
                   color="k", labelpad=st.lblpad)
-    ax.set_ylabel(plot_label(yN, st.toolrad), fontsize=fs, fontname=TNR,
+    ax.set_ylabel(plot_label(yN, st.toolrad, st.lang), fontsize=fs, fontname=TNR,
                   color="k", labelpad=st.lblpad)
     # палочки внутрь на всех четырёх сторонах, цифры — только низ/лево
     ax.tick_params(direction="in", labelsize=fs - 1, colors="k", pad=st.tickpad,
@@ -219,7 +260,7 @@ def draw_3d(fig, X, Y, T, xN, yN, Tmin, Tmax, annot="", st=None):
                                antialiased=False, alpha=1.0, rcount=rc, ccount=rc)
 
     cb = fig.colorbar(surf, ax=ax, pad=st.cbar_pad + 0.04, shrink=0.6)
-    cb.set_label(r"Peak Temperature, $T$ ($^{\circ}$C)", fontsize=fs, fontname=TNR,
+    cb.set_label(_tpeak_label(st.lang), fontsize=fs, fontname=TNR,
                  color="k", rotation=(270 if st.cbar_flip else 90))
     cb.ax.yaxis.set_label_coords(st.cbar_lblx, 0.5)
     cb.ax.tick_params(labelsize=fs - 1, colors="k")
@@ -234,9 +275,11 @@ def draw_3d(fig, X, Y, T, xN, yN, Tmin, Tmax, annot="", st=None):
     if T.min() <= Tmax <= T.max():
         ax.plot_surface(xp, yp, np.full_like(xp, Tmax), color="#e8112d", alpha=0.18)
 
-    ax.set_xlabel(plot_label(xN, st.toolrad), fontsize=fs - 1, fontname=TNR, color="k")
-    ax.set_ylabel(plot_label(yN, st.toolrad), fontsize=fs - 1, fontname=TNR, color="k")
-    ax.set_zlabel(r"Peak Temperature, $T$ ($^{\circ}$C)", fontsize=fs - 1,
+    ax.set_xlabel(plot_label(xN, st.toolrad, st.lang), fontsize=fs - 1,
+                  fontname=TNR, color="k")
+    ax.set_ylabel(plot_label(yN, st.toolrad, st.lang), fontsize=fs - 1,
+                  fontname=TNR, color="k")
+    ax.set_zlabel(_tpeak_label(st.lang), fontsize=fs - 1,
                   fontname=TNR, color="k")
     ax.tick_params(labelsize=fs - 2, colors="k")
 

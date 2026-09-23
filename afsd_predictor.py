@@ -179,6 +179,9 @@ class App(tk.Tk):
         self.whi_var = tk.DoubleVar(value=0.9)            # верхняя граница окна (×T_s)
         self.winfill_var = tk.BooleanVar(value=False)     # зелёная подсветка окна (полный диапазон)
         self.showreg_var = tk.BooleanVar(value=False)     # сокр. регрессия T(x,y) на карте
+        # Подписи рисунка на языке интерфейса. Выключено по умолчанию:
+        # рисунок сохраняется прямо в статью, а журналы ждут английский.
+        self.plotlang_var = tk.BooleanVar(value=False)
         self.elev_var = tk.IntVar(value=28)               # 3D: угол подъёма
         self.azim_var = tk.IntVar(value=-130)             # 3D: азимут
         self.n3d_var = tk.IntVar(value=self.n3d)          # 3D: плотность сетки
@@ -847,6 +850,7 @@ class App(tk.Tk):
         # --- Регрессия на карте ---
         r = group(self.t("sty_reg"))
         chk(r, self.t("lbl_showreg"), self.showreg_var)
+        chk(r, self.t("lbl_plotlang"), self.plotlang_var)
         ttk.Button(r, text=self.t("btn_copyreg"),
                    command=self._copy_reduced_latex).pack(side="left", padx=8)
 
@@ -1231,10 +1235,12 @@ class App(tk.Tk):
 
     def _plot_label(self, name):
         # подписи берём из общего модуля — чтобы совпадали с Qt-окном
-        return afsd_plot.plot_label(name, bool(self.toolrad_var.get()))
+        lang = self.lang if self.plotlang_var.get() else None
+        return afsd_plot.plot_label(name, bool(self.toolrad_var.get()), lang)
 
     def _plot_annot(self, name, val):
-        return afsd_plot.plot_annot(name, val, bool(self.toolrad_var.get()))
+        lang = self.lang if self.plotlang_var.get() else None
+        return afsd_plot.plot_annot(name, val, bool(self.toolrad_var.get()), lang)
 
     def _load_preset(self):
         pr = self.materials[self.preset_var.get()]
@@ -2074,6 +2080,7 @@ class App(tk.Tk):
             n3d=self._iv(self.n3d_var, self.n3d),
             reg_text=(getattr(self, "_reduced_math", None)
                       if self.showreg_var.get() else None),
+            lang=(self.lang if self.plotlang_var.get() else None),
         )
 
     def _draw_2d(self, X, Y, T, xN, yN, Tmin, Tmax, annot):
