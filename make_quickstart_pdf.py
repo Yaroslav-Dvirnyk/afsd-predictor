@@ -602,6 +602,7 @@ def build(lang="ru"):
 
 
 if __name__ == "__main__":
-    langs = sys.argv[1:] or ["ru"]
+    # по умолчанию собираем языки, которые есть в интерфейсе программы
+    langs = sys.argv[1:] or ["en", "uk", "zh"]
     for lg in langs:
         build(lg)

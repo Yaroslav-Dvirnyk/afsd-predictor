@@ -45,6 +45,9 @@ def main(lang="en"):
     app.update_idletasks()
     app.lift()
     app.focus_force()
+    # Поверх всех окон на время съёмки: одного lift() мало — если поверх лежит
+    # чужое окно (редактор, браузер), в кадр попадёт оно, а не программа.
+    app.attributes("-topmost", True)
 
     def grab():
         from PIL import ImageGrab
@@ -98,6 +101,7 @@ def main(lang="en"):
             fh.write(app.result_var.get())
         print("%-12s %s" % ("result_line", "сохранена текстом"))
 
+        app.attributes("-topmost", False)
         app.destroy()
 
     app.after(1800, grab)
