@@ -631,6 +631,7 @@ TR = {
     "st_below": dict(uk="НИЖЧЕ вікна", ru="НИЖЕ окна", en="BELOW window"),
     "st_above": dict(uk="ВИЩЕ вікна", ru="ВЫШЕ окна", en="ABOVE window"),
     "res_window": dict(uk="вікно", ru="окно", en="window"),
+    "res_geom": dict(uk="геометрія", ru="геометрия", en="geometry"),
     "ttl_slice": dict(uk="зріз", ru="срез", en="slice"),
     "ttl_window": dict(uk="вікно", ru="окно", en="window"),
     "ttl_model": dict(uk="модель", ru="модель", en="model"),

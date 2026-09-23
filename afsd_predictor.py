@@ -1756,25 +1756,27 @@ class App(tk.Tk):
         # сток в патрон показываем ПЕРВЫМ: строка результата длинная и хвост
         # уезжает за правый край поля, а η_экв — самое важное при L > 0
         if aud.get("sink_rod", 0.0) > 0.0:
-            extra += (f"   η_экв={aud['eta_rod']:.2f} (L={self._fields['rod_L'].get()} мм,"
-                      f" S_rod={aud['sink_rod']:.3f} Вт/К, Pe_L={aud['Pe_L']:.2f})")
+            extra += (f"   \u03b7_eq={aud['eta_rod']:.2f}"
+                      f" (L={self._fields['rod_L'].get()} {self.t('unit_mm')},"
+                      f" S_rod={aud['sink_rod']:.3f} W/K, Pe_L={aud['Pe_L']:.2f})")
         if self.input_mode == "kin":
             # H и w — ВЫХОД баланса в безбуртовой схеме: в тепловой расчёт входит
             # объёмный расход подачи πR²v_f, а не сечение валика. Влияют на T только
             # в старой эмпирической ветке (C_emp) и в схеме с плечом (через R_eff).
             wb_used = self._f("w_bead") if self.beadw_on_var.get() else 2.0 * R
-            extra += f"   [геометрия] H={H:.2f} мм   w={wb_used:.2f} мм"
+            extra += (f"   [{self.t('res_geom')}] H={H:.2f} {self.t('unit_mm')}"
+                      f"   w={wb_used:.2f} {self.t('unit_mm')}")
         elif self.input_mode == "shoulder":
-            extra += f"   R_eff={R:.2f} мм"
+            extra += f"   R_eff={R:.2f} {self.t('unit_mm')}"
         extra += f"   Pe={aud['Pe']:.2f}, G={aud['G']:.2f}"
         regime = self.t("reg_slide") if aud["branch"] == "sliding" else self.t("reg_stick")
-        extra += (f"   p={aud['p_contact']:.0f}, τc={aud['tau_c']:.0f} МПа"
-                  f" ({regime}, T*={aud['Tstar']:.0f}°C)")
+        extra += (f"   p={aud['p_contact']:.0f}, \u03c4c={aud['tau_c']:.0f} MPa"
+                  f" ({regime}, T*={aud['Tstar']:.0f}\u00b0C)")
         if aud["solidus_flag"]:
             extra += "   ⚠ " + self.t("flag_solidus")
         if aud.get("sink_rod", 0.0) > 0.0:
-            extra += (f"   α/v_f={aud['rod_reach_mm']:.0f} мм,"
-                      f" σ={aud['sigma_adv']:.2f}, Pe_D={aud['Pe_D']:.1f}")
+            extra += (f"   \u03b1/v_f={aud['rod_reach_mm']:.0f} {self.t('unit_mm')},"
+                      f" \u03c3={aud['sigma_adv']:.2f}, Pe_D={aud['Pe_D']:.1f}")
         # аудит решателя в консоль (физика проверяема: ветвь, T*, τ, Q, стоки, Pe, G).
         # Печать защищена: консоль Windows бывает в cp1251, где нет τ/α/η, и
         # UnicodeEncodeError не должен ронять расчёт точки.
