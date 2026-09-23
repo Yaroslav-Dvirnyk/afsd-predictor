@@ -287,6 +287,11 @@ class App(tk.Tk):
             m_lang.add_radiobutton(label=name, value=code, variable=tk.StringVar(value=self.lang),
                                    command=lambda c=code: self.set_language(c))
         m_set.add_cascade(label=self.t("menu_language"), menu=m_lang)
+        # Язык подписей РИСУНКА — отдельно от языка интерфейса: по умолчанию
+        # рисунок английский, потому что сохраняется прямо в статью.
+        m_set.add_checkbutton(label=self.t("lbl_plotlang"),
+                              variable=self.plotlang_var,
+                              command=self._on_plotlang)
         menubar.add_cascade(label=self.t("menu_settings"), menu=m_set)
 
         m_help = tk.Menu(menubar, tearoff=0, font=(self.ui_family, self.ui_size))
@@ -850,9 +855,12 @@ class App(tk.Tk):
         # --- Регрессия на карте ---
         r = group(self.t("sty_reg"))
         chk(r, self.t("lbl_showreg"), self.showreg_var)
-        chk(r, self.t("lbl_plotlang"), self.plotlang_var)
         ttk.Button(r, text=self.t("btn_copyreg"),
                    command=self._copy_reduced_latex).pack(side="left", padx=8)
+
+    def _on_plotlang(self):
+        """Язык подписей рисунка переключён — перерисовать карту."""
+        self._redraw_from_cache()
 
     def _toggle_style(self):
         self._style_collapsed = not self._style_collapsed
