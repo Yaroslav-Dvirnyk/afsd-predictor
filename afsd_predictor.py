@@ -2248,7 +2248,9 @@ class App(tk.Tk):
         frm.pack(fill="both", expand=True)
         frm.columnconfigure(1, weight=1)
 
-        lang_var = tk.StringVar(value=dict(LANGS)[self.lang])
+        # .get, а не [] : если язык откуда-то пришёл снятым с поддержки
+        # (например, ru из старого проекта), диалог не должен падать
+        lang_var = tk.StringVar(value=dict(LANGS).get(self.lang, "English"))
         uifam_var = tk.StringVar(value=self.ui_family)
         uisize_var = tk.IntVar(value=self.ui_size)
         gfam_var = tk.StringVar(value=self.plot_family)
@@ -2460,7 +2462,10 @@ class App(tk.Tk):
         for s, v in data.get("fix", {}).items():
             if s in self.fix_vars:
                 self.fix_vars[s].set(v)
-        self.lang = data.get("lang", self.lang)
+        # Язык из проекта принимаем, только если он есть в меню: старые
+        # проекты хранят lang="ru", а этого языка в интерфейсе больше нет.
+        _lang = data.get("lang", self.lang)
+        self.lang = _lang if _lang in {c for c, _ in LANGS} else "en"
         self.ui_family = data.get("ui_family", self.ui_family)
         self.ui_size = data.get("ui_size", self.ui_size)
         self.plot_family = data.get("plot_family", self.plot_family)

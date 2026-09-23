@@ -24,9 +24,8 @@ NAME = "AFSD_Predictor_v%s_source_and_docs" % VERSION
 # Файлы из папки release, которые кладём в архив дополнительно к исходникам:
 # документация на всех языках и краткие руководства.
 EXTRA = [
-    "README.md", "README.ru.md", "README.uk.md", "README.zh.md",
+    "README.md", "README.uk.md", "README.zh.md",
     "AFSD_Predictor_QuickStart_en.pdf",
-    "AFSD_Predictor_QuickStart_ru.pdf",
     "AFSD_Predictor_QuickStart_uk.pdf",
     "AFSD_Predictor_QuickStart_zh.pdf",
     "materials_full.json", "mu_tables_full.json",
@@ -64,11 +63,10 @@ WHAT IS WHERE
   make_quickstart_*.py   scripts that rebuild the illustrated quick start
 
   docs/README.md         user manual (English)
-  docs/README.ru.md      user manual (Russian)
   docs/README.uk.md      user manual (Ukrainian)
   docs/README.zh.md      user manual (Chinese)
   docs/AFSD_Predictor_QuickStart_*.pdf
-                         illustrated quick start, four languages
+                         illustrated quick start, three languages
   docs/materials_full.json
                          all materials the program knows, as plain text
   docs/mu_tables_full.json
